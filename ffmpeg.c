@@ -40,6 +40,8 @@
 #include <unistd.h>
 #endif
 
+#include <xmaapi.h>
+
 #include "libavformat/avformat.h"
 #include "libavdevice/avdevice.h"
 #include "libswresample/swresample.h"
@@ -4755,6 +4757,16 @@ int main(int argc, char **argv)
     avformat_network_init();
 
     show_banner(argc, argv, options);
+
+#if CONFIG_LIBXMAAPI
+    /* Initialize the Xilinx Media Accelerator */
+    ret = xma_initialize("/tmp/ffmpeg_cfg.yaml");
+    if (ret != 0)
+    {
+        printf("xma_initialize failed: rc = %d\n", ret);
+        exit_program(1);
+    }
+#endif
 
     /* parse options and open all input/output files */
     ret = ffmpeg_parse_options(argc, argv);

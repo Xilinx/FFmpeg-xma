@@ -286,6 +286,7 @@ External library support:
   --enable-opengl          enable OpenGL rendering [no]
   --enable-openssl         enable openssl, needed for https support
                            if gnutls is not used [no]
+  --enable-libxmaapi       enable Xilinx Media Accelerator API
   --disable-schannel       disable SChannel SSP, needed for TLS support on
                            Windows if openssl and gnutls are not used [autodetect]
   --disable-sdl2           disable sdl2 [autodetect]
@@ -1581,6 +1582,7 @@ EXTERNAL_LIBRARY_LIST="
     libvpx
     libwavpack
     libwebp
+    libxmaapi
     libzimg
     libzmq
     libzvbi
@@ -5877,6 +5879,7 @@ enabled libx265           && require_pkg_config x265 x265.h x265_api_get &&
                              { check_cpp_condition x265.h "X265_BUILD >= 68" ||
                                die "ERROR: libx265 version must be >= 68."; }
 enabled libxavs           && require libxavs "stdint.h xavs.h" xavs_encoder_encode -lxavs
+enabled libxmaapi         && require_pkg_config libxmaapi xmaapi.h xma_initialize
 enabled libxvid           && require libxvid xvid.h xvid_global -lxvidcore
 enabled libzimg           && require_pkg_config "zimg >= 2.3.0" zimg.h zimg_get_api_version
 enabled libzmq            && require_pkg_config libzmq zmq.h zmq_ctx_new
