@@ -629,6 +629,8 @@ static void register_all(void)
     REGISTER_ENCODER(LIBX264,           libx264);
     REGISTER_ENCODER(LIBX264RGB,        libx264rgb);
     REGISTER_ENCODER(LIBX265,           libx265);
+    REGISTER_ENCODER(NGC_HEVC,          ngc_hevc);
+    REGISTER_ENCODER(NGC_VP9,           ngc_vp9);
     REGISTER_ENCODER(LIBXAVS,           libxavs);
     REGISTER_ENCODER(LIBXVID,           libxvid);
     REGISTER_DECODER(LIBZVBI_TELETEXT,  libzvbi_teletext);
