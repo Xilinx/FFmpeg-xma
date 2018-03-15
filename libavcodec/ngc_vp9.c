@@ -260,6 +260,7 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     }while(out_size == 0);
     if(out_size > 0)
     {
+      //printf("vp9 out_size=%d\n", out_size);
       int rc = ff_alloc_packet(pkt, out_size);
       if (rc < 0) {
        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
