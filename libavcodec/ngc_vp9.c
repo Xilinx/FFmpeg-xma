@@ -96,8 +96,11 @@ static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
     ctx->FixedQP = 35;
     if (avctx->bit_rate > 0) {
         printf("bitrate set as %d\n",avctx->bit_rate);
-        ctx->bitrateKbps = avctx->bit_rate/1000;
+        ctx->bitrateKbps = avctx->bit_rate;
     }
+    else
+        ctx->bitrateKbps = 0;
+
     if (avctx->gop_size > 0) {
         printf("gop set as %d\n",avctx->gop_size);
         ctx->Intra_Period = avctx->gop_size;
@@ -158,7 +161,7 @@ static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
     enc_props.height = avctx->height;
     enc_props.framerate.numerator = ctx->fps;
     enc_props.framerate.denominator = 1;
-    enc_props.bitrate = avctx->bit_rate;
+    enc_props.bitrate = ctx->bitrateKbps;
     enc_props.qp = ctx->FixedQP;
     enc_props.gop_size = ctx->Intra_Period;
     enc_props.idr_interval = ctx->idr_period;
@@ -255,6 +258,7 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     out_size = 0;
     rc = ff_alloc_packet(pkt, fprops.width * fprops.height);
     XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(pkt->data, fprops.width * fprops.height);
+    //printf("recv_data: ctx = %p\n", ctx);
     do{
         rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
     }while(out_size == 0);
