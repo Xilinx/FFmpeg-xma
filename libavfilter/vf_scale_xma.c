@@ -147,14 +147,10 @@ static int xma_config_props(AVFilterLink *outlink)
     props.num_outputs = s->nb_outputs;
     xma_scaler_default_filter_coeff_set(&props.filter_coefficients);
 
-    // TODO: Assign format based on input type and XMA type
-    //       XMA Scaler plugin needs to be updated to handle
-    //       the XMA type 
-    props.input.format = 3;
+    props.input.format = XMA_YUV420_FMT_TYPE;
     props.input.width = inlink->w;
     props.input.height = inlink->h;
     props.input.stride = inlink->w; 
-
     printf("nb_outputs=%d\n", s->nb_outputs);
     printf("out_1_w=%d\n", s->out_1_width);
     printf("out_1_h=%d\n", s->out_1_height);
@@ -165,29 +161,25 @@ static int xma_config_props(AVFilterLink *outlink)
     printf("out_4_w=%d\n", s->out_4_width);
     printf("out_4_h=%d\n", s->out_4_height);
 
-    // TODO: Assign format with XMA type
-    props.output[0].format = 3;
+    props.output[0].format = XMA_YUV420_FMT_TYPE;
     props.output[0].bits_per_pixel = 8;
     props.output[0].width = s->out_1_width;
     props.output[0].height = s->out_1_height;
     props.output[0].stride = s->out_1_width;
 
-    // TODO: Assign format with XMA type
-    props.output[1].format = 3;
+    props.output[1].format = XMA_YUV420_FMT_TYPE;
     props.output[1].bits_per_pixel = 8;
     props.output[1].width = s->out_2_width;
     props.output[1].height = s->out_2_height;
     props.output[1].stride = s->out_2_width;
 
-    // TODO: Assign format with XMA type
-    props.output[2].format = 3;
+    props.output[2].format = XMA_YUV420_FMT_TYPE;
     props.output[2].bits_per_pixel = 8;
     props.output[2].width = s->out_3_width;
     props.output[2].height = s->out_3_height;
     props.output[2].stride = s->out_3_width;
 
-    // TODO: Assign format with XMA type
-    props.output[3].format = 3;
+    props.output[3].format = XMA_YUV420_FMT_TYPE;
     props.output[3].bits_per_pixel = 8;
     props.output[3].width = s->out_4_width;
     props.output[3].height = s->out_4_height;
