@@ -15,11 +15,11 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include "xmaapi.h"
-
+#include <pthread.h>
 
 #define SDXL
 
-
+static pthread_mutex_t   xma_mutex;
 
 typedef struct ngcvp9_encoder
 {
@@ -77,7 +77,7 @@ static av_cold int ngcvp9_encode_close(AVCodecContext *avctx)
     return 0;
 }
 
-#define NUM_REF_FRAMES_NGC 4
+#define NUM_REF_FRAMES_NGC 1
 static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
 {
 
@@ -86,7 +86,6 @@ static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
     unsigned int ptr =0;
     avctx->coded_frame = av_frame_alloc();
     printf("ngcvp9_encode_init avctx->encoder= 0x%x\n",(unsigned int)&ctx->encoder);
-
     ctx->encoder.m_nFrameNum = 0;
     ctx->encoder.m_nOutFrameNum = 0;
 
@@ -96,11 +95,8 @@ static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
     ctx->FixedQP = 35;
     if (avctx->bit_rate > 0) {
         printf("bitrate set as %d\n",avctx->bit_rate);
-        ctx->bitrateKbps = avctx->bit_rate;
+        ctx->bitrateKbps = avctx->bit_rate/1000;
     }
-    else
-        ctx->bitrateKbps = 0;
-
     if (avctx->gop_size > 0) {
         printf("gop set as %d\n",avctx->gop_size);
         ctx->Intra_Period = avctx->gop_size;
@@ -161,7 +157,7 @@ static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
     enc_props.height = avctx->height;
     enc_props.framerate.numerator = ctx->fps;
     enc_props.framerate.denominator = 1;
-    enc_props.bitrate = ctx->bitrateKbps;
+    enc_props.bitrate = avctx->bit_rate;
     enc_props.qp = ctx->FixedQP;
     enc_props.gop_size = ctx->Intra_Period;
     enc_props.idr_interval = ctx->idr_period;
@@ -185,6 +181,7 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     {
 
       printf("got enc EOF\n");
+      return 0;
       if(ctx->encoder.m_nOutFrameNum >= ctx->encoder.m_nFrameNum)
       {
           printf("returning EOF\n");
@@ -243,10 +240,11 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     frame_data.data[2] = pic->data[2];
 
     // Only send 1 frame for now until the IP is corrected
-
+    //usleep(30*1000);
     XmaFrame *frame = xma_frame_from_buffers_clone(&fprops,&frame_data);
 
     int rc = xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, frame);
+#if 0
     if(ctx->encoder.m_nFrameNum < (NUM_REF_FRAMES_NGC-1))
     {
         ctx->nFrameNum++;
@@ -254,17 +252,15 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         *got_packet = 0;
           return 0;
     }
-
+#endif
     out_size = 0;
     rc = ff_alloc_packet(pkt, fprops.width * fprops.height);
     XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(pkt->data, fprops.width * fprops.height);
-    //printf("recv_data: ctx = %p\n", ctx);
     do{
         rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
     }while(out_size == 0);
     if(out_size > 0)
     {
-      //printf("vp9 out_size=%d\n", out_size);
       int rc = ff_alloc_packet(pkt, out_size);
       if (rc < 0) {
        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
@@ -276,7 +272,10 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
       *got_packet = 1;
       ctx->encoder.m_nOutFrameNum++;
     }
-
+    if(frame)
+	xma_frame_free(frame);
+    if(out_buffer)
+	xma_data_buffer_free(out_buffer);
     ctx->nFrameNum++;
     ctx->encoder.m_nFrameNum++;
 
