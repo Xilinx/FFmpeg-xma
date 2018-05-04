@@ -145,7 +145,7 @@ static int xma_config_props(AVFilterLink *outlink)
     props.hwscaler_type = XMA_POLYPHASE_SCALER_TYPE;
     strcpy(props.hwvendor_string, "Xilinx");
     props.num_outputs = s->nb_outputs;
-    xma_scaler_default_filter_coeff_set(&props.filter_coefficients);
+    //xma_scaler_default_filter_coeff_set(&props.filter_coefficients);
 
     props.input.format = XMA_YUV420_FMT_TYPE;
     props.input.width = inlink->w;
@@ -166,24 +166,39 @@ static int xma_config_props(AVFilterLink *outlink)
     props.output[0].width = s->out_1_width;
     props.output[0].height = s->out_1_height;
     props.output[0].stride = s->out_1_width;
+    props.output[0].filter_idx = 0;
+    props.output[0].coeffLoad =0;
 
     props.output[1].format = XMA_YUV420_FMT_TYPE;
     props.output[1].bits_per_pixel = 8;
     props.output[1].width = s->out_2_width;
     props.output[1].height = s->out_2_height;
     props.output[1].stride = s->out_2_width;
+    props.output[1].filter_idx = 1;
+    props.output[1].coeffLoad =0;
 
     props.output[2].format = XMA_YUV420_FMT_TYPE;
     props.output[2].bits_per_pixel = 8;
     props.output[2].width = s->out_3_width;
     props.output[2].height = s->out_3_height;
     props.output[2].stride = s->out_3_width;
+    props.output[2].filter_idx = 2;
+    props.output[2].coeffLoad =0;
 
     props.output[3].format = XMA_YUV420_FMT_TYPE;
     props.output[3].bits_per_pixel = 8;
     props.output[3].width = s->out_4_width;
     props.output[3].height = s->out_4_height;
     props.output[3].stride = s->out_4_width;
+    props.output[3].filter_idx = 3;
+    props.output[3].coeffLoad =0;
+
+    //When coeffLoad is set to 2, app expects a FilterCoeff.txt to load coefficients from 
+    if ((props.output[0].coeffLoad==2) || (props.output[1].coeffLoad==2) || (props.output[2].coeffLoad==2) || (props.output[3].coeffLoad==2))
+    {
+        sprintf(props.input.coeffFile, "FilterCoeff.txt");
+    }
+
     s->session = xma_scaler_session_create(&props);
 
     return 0;
