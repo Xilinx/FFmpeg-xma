@@ -324,6 +324,7 @@ OBJS-$(CONFIG_H264_CUVID_DECODER)      += cuvid.o
 OBJS-$(CONFIG_H264_MEDIACODEC_DECODER) += mediacodecdec.o
 OBJS-$(CONFIG_H264_MMAL_DECODER)       += mmaldec.o
 OBJS-$(CONFIG_H264_NVENC_ENCODER)      += nvenc_h264.o
+OBJS-$(CONFIG_VYUSYNC_H264_DECODER)    += vyusync_h264.o
 OBJS-$(CONFIG_NVENC_ENCODER)           += nvenc_h264.o
 OBJS-$(CONFIG_NVENC_H264_ENCODER)      += nvenc_h264.o
 OBJS-$(CONFIG_H264_VDA_DECODER)        += vda_h264_dec.o

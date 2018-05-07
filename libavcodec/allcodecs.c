@@ -208,6 +208,7 @@ static void register_all(void)
 #if FF_API_VDPAU
     REGISTER_DECODER(H264_VDPAU,        h264_vdpau);
 #endif
+    REGISTER_DECODER(VYUSYNC_H264,      vyusync_h264);
     REGISTER_ENCDEC (HAP,               hap);
     REGISTER_DECODER(HEVC,              hevc);
     REGISTER_DECODER(HEVC_QSV,          hevc_qsv);
