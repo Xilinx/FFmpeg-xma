@@ -14,16 +14,9 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <fcntl.h>
-#include "xmaapi.h"
-#include <vector.h>
+#include "xma.h"
 
 #define SDXL
-
-typedef struct FrameData {
-	int64_t pts;
-	int64_t dts;
-	int64_t duration;
-};
 
 typedef struct vyusynch264Context {
     const AVClass *class;
@@ -31,7 +24,6 @@ typedef struct vyusynch264Context {
     XmaDecoderSession *m_pDec_session;
     int32_t m_iInputFrames;
     int32_t m_iOutputFrames;
-    std::vector<FrameData> m_aFrameData;
 } vyusynch264Context;
 
 #define OFFSET(x) offsetof(vyusynch264Context, x)
@@ -81,15 +73,12 @@ static int vyusynch264_decode(AVCodecContext *avctx, void *data, int *got_frame,
 	int32_t            data_used       = 0;
     int                rc              = 0;
 
-printf("pts=%ld, dts=%ld, duration=%ld\n", avpkt->pts, avpkt->dts, avpkt->duration);
     if(!avpkt->size)
     {
     	// EOF reached
         rc = xma_dec_session_send_data(ctx->m_pDec_session, NULL, &data_used);
     }else{
-//    	XmaDataBuffer* buf = xma_data_from_buffer_clone(avpkt->data, avpkt->size);
-		XmaDataBuffer* buf = xma_data_buffer_alloc(avpkt->size);
-    	memcpy (buf->data.buffer, avpkt->data, avpkt->size);
+    	XmaDataBuffer* buf = xma_data_from_buffer_clone(avpkt->data, avpkt->size);
         rc = xma_dec_session_send_data(ctx->m_pDec_session, buf, &data_used);
         ctx->m_iInputFrames++;
     }
@@ -101,8 +90,17 @@ printf("pts=%ld, dts=%ld, duration=%ld\n", avpkt->pts, avpkt->dts, avpkt->durati
     rc = xma_dec_session_get_properties(ctx->m_pDec_session, &fprops);
 	if (rc != 0)
 	{
-		*got_frame = 0;
-		return 0;
+		if ((ctx->m_iOutputFrames < ctx->m_iInputFrames) && (data_used == 0))
+		{
+			while (rc != 0)
+			{
+		        rc = xma_dec_session_send_data(ctx->m_pDec_session, NULL, &data_used);
+				rc = xma_dec_session_get_properties(ctx->m_pDec_session, &fprops);
+			}
+		}else{
+			*got_frame = 0;
+			return 0;
+		}
 	}
 	xmaFrame = xma_frame_alloc(&fprops);
 	rc = xma_dec_session_recv_frame(ctx->m_pDec_session, xmaFrame);
