@@ -14,7 +14,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <fcntl.h>
-#include "xma.h"
+#include <xma.h>
 
 #define SDXL
 

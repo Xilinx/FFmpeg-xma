@@ -14,7 +14,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <fcntl.h>
-#include "xmaapi.h"
+#include <xma.h>
 
 
 

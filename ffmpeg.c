@@ -40,7 +40,7 @@
 #include <unistd.h>
 #endif
 
-#include <xmaapi.h>
+#include <xma.h>
 
 #include "libavformat/avformat.h"
 #include "libavdevice/avdevice.h"

@@ -24,8 +24,7 @@
  */
 
 #include <stdio.h>
-#include <xmaapi.h>
-#include <xmascaler.h>
+#include <xma.h>
 
 #include "libavutil/attributes.h"
 #include "libavutil/internal.h"
