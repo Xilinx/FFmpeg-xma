@@ -24,7 +24,8 @@
  */
 
 #include <stdio.h>
-#include <xma.h>
+#include <xmaapi.h>
+#include <xmascaler.h>
 
 #include "libavutil/attributes.h"
 #include "libavutil/internal.h"
@@ -47,7 +48,6 @@ typedef struct AbrScalerContext {
     int               out_3_height;
     int               out_4_width;
     int               out_4_height;
-    int               out_idx;
     XmaScalerSession *session; 
 } AbrScalerContext;
 
@@ -58,10 +58,6 @@ static av_cold int scale_xma_init(AVFilterContext *ctx)
     int i;
     AbrScalerContext *s = ctx->priv;
 
-    printf("scale_xma_init called\n");
-
-    s->out_idx = 0;
-
     for (i = 0; i < s->nb_outputs; i++) {
         char name[32];
         AVFilterPad pad = { 0 };
@@ -70,11 +66,10 @@ static av_cold int scale_xma_init(AVFilterContext *ctx)
         pad.type = ctx->filter->inputs[0].type;
         pad.name = av_strdup(name);
         if (!pad.name)
-            return AVERROR(ENOMEM);
+            return AVERROR(ENOMEM);	
         pad.config_props = output_config_props;
-
         ff_insert_outpad(ctx, i, &pad);
-    }
+		}
 
     return 0;
 }
@@ -84,11 +79,11 @@ static av_cold void scale_xma_uninit(AVFilterContext *ctx)
     int              i;
     AbrScalerContext *s = ctx->priv;
 
-    printf("scale_xma_uninit called\n");
-
     for (i = 0; i < ctx->nb_outputs; i++)
+    {
         av_freep(&ctx->output_pads[i].name);
-
+        //printf("****pad name=%s\n",ctx->output_pads[i].name);
+    }
     if (s->session)
         xma_scaler_session_destroy(s->session);
 
@@ -98,36 +93,32 @@ int output_config_props(AVFilterLink *outlink)
 {
     AVFilterContext     *ctx    = outlink->src;
     AbrScalerContext    *s      = ctx->priv;
-    AVFilterLink        *out    = outlink->src->outputs[s->out_idx];
+    const int outlink_idx = FF_OUTLINK_IDX(outlink);
+    AVFilterLink        *out    = outlink->src->outputs[outlink_idx];
 
-    printf("output_config_props called\n");
-    printf("s->out_idx = %d\n", s->out_idx);
-
-    switch (s->out_idx)
+    switch (outlink_idx)
     {
         case 0:
            out->w = s->out_1_width;
-           out->h = s->out_1_height;
+           out->h = s->out_1_height;	   
         break;
         case 1:
            out->w = s->out_2_width;
-           out->h = s->out_2_height;
+           out->h = s->out_2_height;   
         break;
         case 2:
            out->w = s->out_3_width;
-           out->h = s->out_3_height;
+           out->h = s->out_3_height;	   
         break;
         case 3:
            out->w = s->out_4_width;
            out->h = s->out_4_height;
-        break;
+		break;
         default:
             return -1;
     }
-
     printf("out->w = %d\n", out->w);
-    printf("out->h = %d\n", out->h);
-    s->out_idx += 1;
+    printf("out->h = %d\n", out->h);	
 
     return 0;
 }
@@ -139,17 +130,15 @@ static int xma_config_props(AVFilterLink *outlink)
     XmaScalerProperties  props;
     AbrScalerContext    *s      = ctx->priv;
 
-    printf("xma_config_props called\n");
-
     props.hwscaler_type = XMA_POLYPHASE_SCALER_TYPE;
     strcpy(props.hwvendor_string, "Xilinx");
     props.num_outputs = s->nb_outputs;
-    //xma_scaler_default_filter_coeff_set(&props.filter_coefficients);
 
     props.input.format = XMA_YUV420_FMT_TYPE;
     props.input.width = inlink->w;
     props.input.height = inlink->h;
     props.input.stride = inlink->w; 
+
     printf("nb_outputs=%d\n", s->nb_outputs);
     printf("out_1_w=%d\n", s->out_1_width);
     printf("out_1_h=%d\n", s->out_1_height);
@@ -159,22 +148,22 @@ static int xma_config_props(AVFilterLink *outlink)
     printf("out_3_h=%d\n", s->out_3_height);
     printf("out_4_w=%d\n", s->out_4_width);
     printf("out_4_h=%d\n", s->out_4_height);
-
+	
     props.output[0].format = XMA_YUV420_FMT_TYPE;
     props.output[0].bits_per_pixel = 8;
     props.output[0].width = s->out_1_width;
     props.output[0].height = s->out_1_height;
     props.output[0].stride = s->out_1_width;
     props.output[0].filter_idx = 0;
-    props.output[0].coeffLoad =0;
-
+    props.output[0].coeffLoad = 0;
+	
     props.output[1].format = XMA_YUV420_FMT_TYPE;
     props.output[1].bits_per_pixel = 8;
     props.output[1].width = s->out_2_width;
     props.output[1].height = s->out_2_height;
     props.output[1].stride = s->out_2_width;
     props.output[1].filter_idx = 1;
-    props.output[1].coeffLoad =0;
+    props.output[1].coeffLoad = 0;	
 
     props.output[2].format = XMA_YUV420_FMT_TYPE;
     props.output[2].bits_per_pixel = 8;
@@ -182,7 +171,7 @@ static int xma_config_props(AVFilterLink *outlink)
     props.output[2].height = s->out_3_height;
     props.output[2].stride = s->out_3_width;
     props.output[2].filter_idx = 2;
-    props.output[2].coeffLoad =0;
+    props.output[2].coeffLoad = 0;	
 
     props.output[3].format = XMA_YUV420_FMT_TYPE;
     props.output[3].bits_per_pixel = 8;
@@ -190,14 +179,14 @@ static int xma_config_props(AVFilterLink *outlink)
     props.output[3].height = s->out_4_height;
     props.output[3].stride = s->out_4_width;
     props.output[3].filter_idx = 3;
-    props.output[3].coeffLoad =0;
-
+    props.output[3].coeffLoad = 0;	
+	
     //When coeffLoad is set to 2, app expects a FilterCoeff.txt to load coefficients from 
     if ((props.output[0].coeffLoad==2) || (props.output[1].coeffLoad==2) || (props.output[2].coeffLoad==2) || (props.output[3].coeffLoad==2))
     {
         sprintf(props.input.coeffFile, "FilterCoeff.txt");
     }
-
+	
     s->session = xma_scaler_session_create(&props);
 
     return 0;
@@ -281,8 +270,6 @@ static int xma_query_formats(AVFilterContext *ctx)
 
     AVFilterFormats *pix_fmts;
     int              ret;
-
-    printf("xma_query_formats called\n");
 
     pix_fmts = ff_make_format_list(pixel_formats);
 
