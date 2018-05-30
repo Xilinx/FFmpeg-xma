@@ -19,16 +19,15 @@
 #define SDXL
 
 typedef struct vyusynch264Context {
-    const AVClass *class;
-
-    XmaDecoderSession *m_pDec_session;
-    int32_t m_iInputFrames;
-    int32_t m_iOutputFrames;
+    const AVClass     *class;
+    XmaDecoderSession *dec_session;
+    unsigned int       intraOnly;
 } vyusynch264Context;
 
 #define OFFSET(x) offsetof(vyusynch264Context, x)
 #define VD AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
 static const AVOption options[] = {
+    { "intraOnly", "Intra-Only", OFFSET(intraOnly), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, 1, VD, "intraOnly"},
     { NULL },
 };
 
@@ -36,7 +35,7 @@ static av_cold int vyusynch264_decode_close(AVCodecContext *avctx)
 {
     vyusynch264Context *ctx = avctx->priv_data;
 
-    xma_dec_session_destroy(ctx->m_pDec_session);
+    xma_dec_session_destroy(ctx->dec_session);
 
     return 0;
 }
@@ -50,12 +49,11 @@ static av_cold int vyusynch264_decode_init(AVCodecContext *avctx)
 
     dec_props.hwdecoder_type = XMA_H264_DECODER_TYPE;
     strcpy(dec_props.hwvendor_string, "vyusync");
+    dec_props.intraOnly = ctx->intraOnly;
 
     printf("creating dec session\n");
-    ctx->m_pDec_session = xma_dec_session_create(&dec_props);
-    printf("session : 0x%x \n",(unsigned int)ctx->m_pDec_session);
-    ctx->m_iInputFrames = 0;
-    ctx->m_iOutputFrames = 0;
+    ctx->dec_session = xma_dec_session_create(&dec_props);
+    printf("session : 0x%x \n",(unsigned int)ctx->dec_session);
 
     return 0;
 }
@@ -76,26 +74,30 @@ static int vyusynch264_decode(AVCodecContext *avctx, void *data, int *got_frame,
     if(!avpkt->size)
     {
     	// EOF reached
-        rc = xma_dec_session_send_data(ctx->m_pDec_session, NULL, &data_used);
+        rc = xma_dec_session_send_data(ctx->dec_session, NULL, &data_used);
     }else{
     	XmaDataBuffer* buf = xma_data_from_buffer_clone(avpkt->data, avpkt->size);
-        rc = xma_dec_session_send_data(ctx->m_pDec_session, buf, &data_used);
-        ctx->m_iInputFrames++;
+        rc = xma_dec_session_send_data(ctx->dec_session, buf, &data_used);
     }
-    if (ctx->m_iOutputFrames >= ctx->m_iInputFrames)
+    rc = xma_dec_session_get_properties(ctx->dec_session, &fprops);
+    if (rc == -2)
     {
         *got_frame = 0;
         return 0;
     }
-    rc = xma_dec_session_get_properties(ctx->m_pDec_session, &fprops);
 	if (rc != 0)
 	{
-		if ((ctx->m_iOutputFrames < ctx->m_iInputFrames) && (data_used == 0))
+		if (data_used == 0)
 		{
 			while (rc != 0)
 			{
-		        rc = xma_dec_session_send_data(ctx->m_pDec_session, NULL, &data_used);
-				rc = xma_dec_session_get_properties(ctx->m_pDec_session, &fprops);
+		        rc = xma_dec_session_send_data(ctx->dec_session, NULL, &data_used);
+				rc = xma_dec_session_get_properties(ctx->dec_session, &fprops);
+			    if (rc == -2)
+			    {
+			        *got_frame = 0;
+			        return 0;
+			    }
 			}
 		}else{
 			*got_frame = 0;
@@ -103,7 +105,7 @@ static int vyusynch264_decode(AVCodecContext *avctx, void *data, int *got_frame,
 		}
 	}
 	xmaFrame = xma_frame_alloc(&fprops);
-	rc = xma_dec_session_recv_frame(ctx->m_pDec_session, xmaFrame);
+	rc = xma_dec_session_recv_frame(ctx->dec_session, xmaFrame);
 	if (rc != 0)
 	{
 		xma_frame_free(xmaFrame);
@@ -145,7 +147,6 @@ static int vyusynch264_decode(AVCodecContext *avctx, void *data, int *got_frame,
 
 	xma_frame_free(xmaFrame);
 	*got_frame = 1;
-	ctx->m_iOutputFrames++;
 	return data_used;
 }
 
@@ -162,9 +163,6 @@ static av_cold void vyusynch264_decode_init_csp(AVCodec *codec)
 {
         codec->pix_fmts = vyusynch264_csp_eight;
 }
-
-
-
 
 static const AVClass class = {
     .class_name = "vyuh264",

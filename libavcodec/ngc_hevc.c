@@ -161,7 +161,7 @@ static av_cold int ngc265_encode_init(AVCodecContext *avctx)
     }
     printf("width=%d height = %d rc=%d\n",avctx->width,avctx->height,avctx->bit_rate);
     XmaEncoderProperties enc_props;
-    enc_props.hwencoder_type = XMA_VP9_ENCODER_TYPE;
+    enc_props.hwencoder_type = XMA_HEVC_ENCODER_TYPE;
 
     strcpy(enc_props.hwvendor_string, "NGCodec");
 
