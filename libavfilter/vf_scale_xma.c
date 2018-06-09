@@ -100,19 +100,23 @@ int output_config_props(AVFilterLink *outlink)
         case 0:
            out->w = s->out_1_width;
            out->h = s->out_1_height;	   
+           outlink->sample_aspect_ratio= (AVRational) {1, 1};
         break;
         case 1:
            out->w = s->out_2_width;
            out->h = s->out_2_height;   
+           outlink->sample_aspect_ratio= (AVRational) {1, 1};
         break;
         case 2:
            out->w = s->out_3_width;
            out->h = s->out_3_height;	   
+           outlink->sample_aspect_ratio= (AVRational) {1, 1};
         break;
         case 3:
            out->w = s->out_4_width;
            out->h = s->out_4_height;
-		break;
+           outlink->sample_aspect_ratio= (AVRational) {1, 1};
+	break;
         default:
             return -1;
     }
@@ -211,7 +215,12 @@ static int xma_filter_frame(AVFilterLink *link, AVFrame *frame)
     frame_props.width = in_frame->width;
     frame_props.height = in_frame->height;
     frame_props.bits_per_pixel = 8;
-    
+	
+    //set the stride	
+    in_frame->linesize[0] = in_frame->width;
+    in_frame->linesize[1] = in_frame->width>>1;
+    in_frame->linesize[2] = in_frame->width>>1;
+
     frame_data.data[0] = in_frame->data[0];
     frame_data.data[1] = in_frame->data[1];
     frame_data.data[2] = in_frame->data[2];
@@ -249,6 +258,12 @@ static int xma_filter_frame(AVFilterLink *link, AVFrame *frame)
         av_frame_copy_props(a_frame_list[i], in_frame);
         a_frame_list[i]->width = ctx->outputs[i]->w;
         a_frame_list[i]->height = ctx->outputs[i]->h;
+		
+        //set the stride
+        a_frame_list[i]->linesize[0] = a_frame_list[i]->width;
+        a_frame_list[i]->linesize[1] = (a_frame_list[i]->width)>>1;
+        a_frame_list[i]->linesize[2] = (a_frame_list[i]->width)>>1;
+
 
         ret = ff_filter_frame(ctx->outputs[i], a_frame_list[i]);
         if (ret < 0)
