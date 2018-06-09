@@ -184,6 +184,9 @@ static av_cold int ngc265_encode_init(AVCodecContext *avctx)
     enc_props.spat_aq_gain = ctx->spat_aq_gain;
     printf("creating enc session\n");
     ctx->encoder.m_pEnc_session = xma_enc_session_create(&enc_props);
+    if (!ctx->encoder.m_pEnc_session)
+        return -1;
+
     printf("session : %x \n",ctx->encoder.m_pEnc_session);
     return 0;
 }

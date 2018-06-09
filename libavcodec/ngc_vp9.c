@@ -163,6 +163,9 @@ static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
     enc_props.idr_interval = ctx->idr_period;
     printf("creating enc session\n");
     ctx->encoder.m_pEnc_session = xma_enc_session_create(&enc_props);
+    if (!ctx->encoder.m_pEnc_session)
+        return -1;
+ 
     printf("session : %x \n",ctx->encoder.m_pEnc_session);
     return 0;
 }

@@ -187,6 +187,8 @@ static int xma_config_props(AVFilterLink *outlink)
     }
 	
     s->session = xma_scaler_session_create(&props);
+    if (!s->session)
+        return -1;
 
     return 0;
 }
