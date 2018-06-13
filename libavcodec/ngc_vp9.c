@@ -19,7 +19,6 @@
 
 #define SDXL
 
-static pthread_mutex_t   xma_mutex;
 
 typedef struct ngcvp9_encoder
 {
@@ -50,13 +49,8 @@ typedef struct ngcvp9Context {
 #define OFFSET(x) offsetof(ngcvp9Context, x)
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
-    //{ "qp",          "Constant quantization parameter rate control method",OFFSET(cqp),        AV_OPT_TYPE_INT,    { .i64 = -1 }, -1, INT_MAX, VE },
-    { "aq-mode",       "AQ method",                                OFFSET(aq_mode),       AV_OPT_TYPE_INT,    { .i64 = 1 }, 0, 1, VE, "aq_mode"},
-    //{ "aq-strength", "AQ strength. Reduces blocking and blurring in flat and textured areas.", OFFSET(aq_strength), AV_OPT_TYPE_FLOAT, {.dbl = -1}, -1, FLT_MAX, VE},
-    { "rc-lookahead",  "Number of frames to look ahead for frametype and ratecontrol", OFFSET(rc_lookahead), AV_OPT_TYPE_INT, { .i64 = 30 }, 8, 64, VE },
-    //{ "intra-refresh", "Use Periodic Intra Refresh instead of IDR frames.",OFFSET(intra_refresh),AV_OPT_TYPE_BOOL,   { .i64 = -1 }, -1, 1, VE },
-    //{ "deblock",       "Loop filter parameters, in <alpha:beta> form.",   OFFSET(deblock),       AV_OPT_TYPE_STRING, { 0 },  0, 0, VE},
-    //{ "ngcvp9-opts",  "Override the x264 configuration using a :-separated list of key=value parameters", OFFSET(ngc265_opts), AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE },
+    { "aq-mode",       "AQ method",                                OFFSET(aq_mode),       AV_OPT_TYPE_INT,    { .i64 = 0}, 0, 1, VE, "aq_mode"},
+    { "rc-lookahead",  "Number of frames to look ahead for frametype and ratecontrol", OFFSET(rc_lookahead), AV_OPT_TYPE_INT, { .i64 = 8 }, 8, 64, VE },
     { "idr-period",       "IDR Period",                                OFFSET(idr_period),       AV_OPT_TYPE_INT,    { .i64 = 0 }, 0, INT_MAX, VE, "idr_period"},
     { NULL },
 };
@@ -77,7 +71,7 @@ static av_cold int ngcvp9_encode_close(AVCodecContext *avctx)
     return 0;
 }
 
-#define NUM_REF_FRAMES_NGC 1
+#define NUM_REF_FRAMES_NGC 46
 static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
 {
 
@@ -91,7 +85,9 @@ static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
 
     ctx->paramSet = 0;
     ctx->nFrameNum = 0;
-
+    ctx->Intra_Period = 0;
+    ctx->fps = 25;
+    ctx->bitrateKbps = 0;
     ctx->FixedQP = 35;
     if (avctx->bit_rate > 0) {
         printf("bitrate set as %d\n",avctx->bit_rate);
@@ -100,32 +96,32 @@ static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
     if (avctx->gop_size > 0) {
         printf("gop set as %d\n",avctx->gop_size);
         ctx->Intra_Period = avctx->gop_size;
-        printf("gop set as %d\n",ctx->Intra_Period);
+        //printf("gop set as %d\n",ctx->Intra_Period);
     }
     if (avctx->global_quality > 0){
       	printf("qp set as %d\n",avctx->global_quality/FF_QP2LAMBDA);
       	ctx->FixedQP = avctx->global_quality/FF_QP2LAMBDA;
     }
-    printf("fps set as %d/%d\n",avctx->framerate.num,avctx->framerate.den);
+    //printf("fps set as %d/%d\n",avctx->framerate.num,avctx->framerate.den);
     if (avctx->time_base.den > 0) {
         int fpsNum = avctx->time_base.den;
         int fpsDenom = avctx->time_base.num * avctx->ticks_per_frame;
         int fps = fpsNum/fpsDenom;
         printf("fps set as %d/%d=%d\n",avctx->framerate.num,avctx->framerate.den,fps);
         ctx->fps = fps;
-        printf("fps set\n");
+        //printf("fps set\n");
     }
+    printf("aq=%d\n",ctx->aq_mode);
+#if 0
     if(avctx->max_b_frames == 0)
     {
         printf("No B- frames use MrfMode \n");
     }
     if(ctx->rc_lookahead)
       printf("la=%d\n",ctx->rc_lookahead);
-    if(ctx->aq_mode)
-      printf("aq=%d\n",ctx->aq_mode);
     if(ctx->idr_period)
       printf("idr=%d\n",ctx->idr_period);
-
+#endif
     ctx->paramSet = 1;
     ctx->tmp_frame = av_frame_alloc();
     if (!ctx->tmp_frame)
@@ -161,15 +157,13 @@ static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
     enc_props.qp = ctx->FixedQP;
     enc_props.gop_size = ctx->Intra_Period;
     enc_props.idr_interval = ctx->idr_period;
+    enc_props.lookahead_depth = ctx->rc_lookahead;
+    enc_props.aq_mode = ctx->aq_mode;
     printf("creating enc session\n");
     ctx->encoder.m_pEnc_session = xma_enc_session_create(&enc_props);
-    if (!ctx->encoder.m_pEnc_session)
-        return -1;
- 
     printf("session : %x \n",ctx->encoder.m_pEnc_session);
     return 0;
 }
-
 
 
 static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
@@ -178,91 +172,114 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     ngcvp9Context *ctx = avctx->priv_data;
     unsigned long out_size;
-    //printf("framenum = %d\n",ctx->encoder.m_nFrameNum);
+    XmaFrameProperties fprops;
+    XmaFrameData       frame_data;
+    printf("framenum = %d\n",ctx->encoder.m_nFrameNum);
+
+    fprops.format = XMA_YUV420_FMT_TYPE;
+    fprops.width = avctx->width;
+    fprops.height = avctx->height;
+    fprops.bits_per_pixel = 8;
+
+    frame_data.data[0] = NULL;
+    frame_data.data[1] = NULL;
+    frame_data.data[2] = NULL;
 
     if(!pic)
     {
 
       printf("got enc EOF\n");
-      return 0;
       if(ctx->encoder.m_nOutFrameNum >= ctx->encoder.m_nFrameNum)
       {
           printf("returning EOF\n");
 	        *got_packet = 0;
           return AVERROR_EOF;
       }
-      int rc = xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, NULL);
-
-      printf("out num %d in num %d\n",ctx->encoder.m_nOutFrameNum,ctx->encoder.m_nFrameNum);
+      XmaFrame *frame = xma_frame_from_buffers_clone(&fprops,&frame_data);
+      frame->bIsIDR=0;
+      frame->bDoNotEncode = 1;
+      frame->bIsLastFrame = 1;
       char *temp = malloc(avctx->width * avctx->height * (ctx->encoder.m_nOutFrameNum - ctx->encoder.m_nFrameNum));
       unsigned long nSize = 0;
-      while(ctx->encoder.m_nOutFrameNum < ctx->encoder.m_nFrameNum)
+      unsigned char bIsLastOutput = 0;
+      while(bIsLastOutput == 0)
       {
-          out_size = 0;
-            XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(temp+nSize, avctx->width * avctx->height);
-            do{
-              rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
+         printf("out num %d in num %d\n",ctx->encoder.m_nOutFrameNum,ctx->encoder.m_nFrameNum);
+         out_size = 0;
+         if(nSize>0)
+           frame->bIsLastFrame = 0;        
+         xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, frame);
+
+         XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(temp+nSize, avctx->width * avctx->height);
+         do{
+              xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
               nSize += out_size;
 
-            }while(out_size == 0);
-
-            ctx->encoder.m_nOutFrameNum++;
+          }while(out_size == 0);
+          bIsLastOutput = out_buffer->bIsEOF;
+          ctx->encoder.m_nOutFrameNum++;
       }
-    	if(nSize > 0)
+      if(nSize > 0)
       {
-    	     printf("nsize=%d\n",nSize);
-           int rc = ff_alloc_packet(pkt, nSize);
-    	     memcpy(pkt->data,temp,nSize);
-    	     free(temp);
-                 if (rc < 0) {
-                     av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
-                     return rc;
-            	}
-    	    *got_packet = 1;
-    	    return 0;
-    	}
+        printf("nsize=%d\n",nSize);
+        int rc = ff_alloc_packet(pkt, nSize);
+        memcpy(pkt->data,temp,nSize);
+        free(temp);
+        if (rc < 0) 
+        {
+          av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
+          return rc;
+        }
+    	*got_packet = 1;
+    	return 0;
+      }
       else
-    	{
-           *got_packet = 0;
-           return AVERROR_EOF;
-    	}
+      {
+        *got_packet = 0;
+        return AVERROR_EOF;
+      }
     }
 
     *got_packet = 0;
     out_size = 0;
     // Create a frame
-    XmaFrameProperties fprops;
-    fprops.format = XMA_YUV420_FMT_TYPE;
-    fprops.width = avctx->width;
-    fprops.height = avctx->height;
-    fprops.bits_per_pixel = 8;
-    XmaFrameData       frame_data;
 
     frame_data.data[0] = pic->data[0];
     frame_data.data[1] = pic->data[1];
     frame_data.data[2] = pic->data[2];
 
-    // Only send 1 frame for now until the IP is corrected
-    //usleep(30*1000);
     XmaFrame *frame = xma_frame_from_buffers_clone(&fprops,&frame_data);
-
+    frame->bIsIDR=0;
+    frame->bDoNotEncode = 0;
+    frame->bIsLastFrame = 0;
+    //printf("linesize %d %d w %d h %d\n",pic->linesize[0],pic->linesize[1],pic->width,pic->height);
     int rc = xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, frame);
-#if 0
-    if(ctx->encoder.m_nFrameNum < (NUM_REF_FRAMES_NGC-1))
-    {
-        ctx->nFrameNum++;
-        ctx->encoder.m_nFrameNum++;
-        *got_packet = 0;
-          return 0;
-    }
-#endif
+    //usleep(100*1000);
     out_size = 0;
     rc = ff_alloc_packet(pkt, fprops.width * fprops.height);
     XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(pkt->data, fprops.width * fprops.height);
-    do{
+    int nCount=0;
+#if 1
+    if(ctx->encoder.m_nFrameNum < (ctx->rc_lookahead+23))
+    {
+        /*ctx->nFrameNum++;
+        ctx->encoder.m_nFrameNum++;
+        *got_packet = 0;
+          return 0;*/
         rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
+    }
+    else {
+    
+#endif
+    do{
+	//usleep(5*1000);
+        rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
+        //printf("out_size=%d\n",out_size);
+	nCount++;
     }while(out_size == 0);
-    if(out_size > 0)
+    }
+    //printf("out_size=%d\n",out_size);
+    if(out_size != 0)
     {
       int rc = ff_alloc_packet(pkt, out_size);
       if (rc < 0) {
@@ -274,6 +291,10 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
       pkt->dts = pic->pts;
       *got_packet = 1;
       ctx->encoder.m_nOutFrameNum++;
+    }
+    else
+    {
+	*got_packet = 0;
     }
     if(frame)
 	xma_frame_free(frame);
