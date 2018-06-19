@@ -49,7 +49,7 @@ typedef struct ngcvp9Context {
 #define OFFSET(x) offsetof(ngcvp9Context, x)
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
-    { "aq-mode",       "AQ method",                                OFFSET(aq_mode),       AV_OPT_TYPE_INT,    { .i64 = 0}, 0, 1, VE, "aq_mode"},
+    { "aq-mode",       "AQ method",                                OFFSET(aq_mode),       AV_OPT_TYPE_INT,    { .i64 = 1}, 0, 1, VE, "aq_mode"},
     { "rc-lookahead",  "Number of frames to look ahead for frametype and ratecontrol", OFFSET(rc_lookahead), AV_OPT_TYPE_INT, { .i64 = 8 }, 8, 64, VE },
     { "idr-period",       "IDR Period",                                OFFSET(idr_period),       AV_OPT_TYPE_INT,    { .i64 = 0 }, 0, INT_MAX, VE, "idr_period"},
     { NULL },
