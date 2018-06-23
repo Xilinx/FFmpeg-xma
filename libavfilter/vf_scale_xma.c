@@ -194,7 +194,7 @@ static int xma_config_props(AVFilterLink *outlink)
     s->session = xma_scaler_session_create(&props);
     if (!s->session)
     {
-        printf("ERROR:session creation failed.i\n");
+        printf("ERROR:session creation failed.\n");
         return -1;
     }
 
