@@ -25,6 +25,7 @@
 
 #include <stdio.h>
 #include <xma.h>
+#include <xmaplugin.h>
 
 #include "libavutil/attributes.h"
 #include "libavutil/internal.h"
@@ -192,7 +193,10 @@ static int xma_config_props(AVFilterLink *outlink)
 	
     s->session = xma_scaler_session_create(&props);
     if (!s->session)
+    {
+        printf("ERROR:session creation failed.i\n");
         return -1;
+    }
 
     return 0;
 }
@@ -201,9 +205,12 @@ static int xma_filter_frame(AVFilterLink *link, AVFrame *frame)
 {
     AVFilterContext     *ctx            = link->dst;
     AbrScalerContext    *s              = ctx->priv;
+    int8_t               frame_id       = s->session->first_frame;	
+	
     AVFrame             *in_frame       = frame;
     XmaFrame            *xframe         = NULL; 
     int                  ret            = AVERROR_EOF;
+	
     AVFrame             *a_frame_list[4];
     XmaFrame            *x_frame_list[4];
     XmaFrameData         frame_data;
@@ -251,27 +258,31 @@ static int xma_filter_frame(AVFilterLink *link, AVFrame *frame)
     } 
         
     xma_scaler_session_send_frame(s->session, xframe);
-    xma_scaler_session_recv_frame_list(s->session, x_frame_list);
+    if(frame_id> 1){ // only read output frame after 3rd frame.
+       xma_scaler_session_recv_frame_list(s->session, x_frame_list);
 
-    for (i = 0; i < ctx->nb_outputs; i++) 
-    {
-        av_frame_copy_props(a_frame_list[i], in_frame);
-        a_frame_list[i]->width = ctx->outputs[i]->w;
-        a_frame_list[i]->height = ctx->outputs[i]->h;
+       for (i = 0; i < ctx->nb_outputs; i++) 
+       {
+           av_frame_copy_props(a_frame_list[i], in_frame);
+           a_frame_list[i]->width = ctx->outputs[i]->w;
+           a_frame_list[i]->height = ctx->outputs[i]->h;
 		
-        //set the stride
-        a_frame_list[i]->linesize[0] = a_frame_list[i]->width;
-        a_frame_list[i]->linesize[1] = (a_frame_list[i]->width)>>1;
-        a_frame_list[i]->linesize[2] = (a_frame_list[i]->width)>>1;
+           //set the stride
+           a_frame_list[i]->linesize[0] = a_frame_list[i]->width;
+           a_frame_list[i]->linesize[1] = (a_frame_list[i]->width)>>1;
+           a_frame_list[i]->linesize[2] = (a_frame_list[i]->width)>>1;
 
 
-        ret = ff_filter_frame(ctx->outputs[i], a_frame_list[i]);
-        if (ret < 0)
-        {
-            printf("xma_filter_frame: ff_filter_frame failed: ret=%d\n", ret);
-            break;
-        }
+           ret = ff_filter_frame(ctx->outputs[i], a_frame_list[i]);
+           if (ret < 0)
+           {
+               printf("xma_filter_frame: ff_filter_frame failed: ret=%d\n", ret);
+               break;
+           }
+	   }
     }
+    else // first 2 frames are not valid data due to pipe-linining
+        ret = 0;
 
     av_frame_free(&frame);
     return ret;
