@@ -196,9 +196,9 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
           return AVERROR_EOF;
       }
       XmaFrame *frame = xma_frame_from_buffers_clone(&fprops,&frame_data);
-      frame->bIsIDR=0;
-      frame->bDoNotEncode = 1;
-      frame->bIsLastFrame = 1;
+      frame->is_idr=0;
+      frame->do_not_encode = 1;
+      frame->is_last_frame = 1;
       char *temp = malloc(avctx->width * avctx->height * (ctx->encoder.m_nOutFrameNum - ctx->encoder.m_nFrameNum));
       unsigned long nSize = 0;
       unsigned char bIsLastOutput = 0;
@@ -207,7 +207,7 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
          printf("out num %d in num %d\n",ctx->encoder.m_nOutFrameNum,ctx->encoder.m_nFrameNum);
          out_size = 0;
          if(nSize>0)
-           frame->bIsLastFrame = 0;        
+           frame->is_last_frame = 0;        
          xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, frame);
 
          XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(temp+nSize, avctx->width * avctx->height);
@@ -216,7 +216,7 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
               nSize += out_size;
 
           }while(out_size == 0);
-          bIsLastOutput = out_buffer->bIsEOF;
+          bIsLastOutput = out_buffer->is_eof;
           ctx->encoder.m_nOutFrameNum++;
       }
       if(nSize > 0)
@@ -249,9 +249,9 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     frame_data.data[2] = pic->data[2];
 
     XmaFrame *frame = xma_frame_from_buffers_clone(&fprops,&frame_data);
-    frame->bIsIDR=0;
-    frame->bDoNotEncode = 0;
-    frame->bIsLastFrame = 0;
+    frame->is_idr=0;
+    frame->do_not_encode = 0;
+    frame->is_last_frame = 0;
     //printf("linesize %d %d w %d h %d\n",pic->linesize[0],pic->linesize[1],pic->width,pic->height);
     int rc = xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, frame);
     //usleep(100*1000);
