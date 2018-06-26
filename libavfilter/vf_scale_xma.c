@@ -310,14 +310,14 @@ static int xma_query_formats(AVFilterContext *ctx)
 #define FLAGS (AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_FILTERING_PARAM)
 static const AVOption options[] = {
     { "outputs", "set number of outputs", OFFSET(nb_outputs), AV_OPT_TYPE_INT, { .i64 = 4 }, 1, INT_MAX, FLAGS },
-    { "out_1_width", "set width of output 1", OFFSET(out_1_width), AV_OPT_TYPE_INT, { .i64 = 1280 }, 256, INT_MAX, FLAGS },
-    { "out_1_height", "set height of output 1", OFFSET(out_1_height), AV_OPT_TYPE_INT, { .i64 = 720 }, 144, INT_MAX, FLAGS },
-    { "out_2_width", "set width of output 2", OFFSET(out_2_width), AV_OPT_TYPE_INT, { .i64 = 852 }, 256, INT_MAX, FLAGS },
-    { "out_2_height", "set height of output 2", OFFSET(out_2_height), AV_OPT_TYPE_INT, { .i64 = 480 }, 144, INT_MAX, FLAGS },
-    { "out_3_width", "set width of output 3", OFFSET(out_3_width), AV_OPT_TYPE_INT, { .i64 = 640 }, 256, INT_MAX, FLAGS },
-    { "out_3_height", "set height of output 3", OFFSET(out_3_height), AV_OPT_TYPE_INT, { .i64 = 360 }, 144, INT_MAX, FLAGS },
-    { "out_4_width", "set width of output 4", OFFSET(out_4_width), AV_OPT_TYPE_INT, { .i64 = 256 }, 256, INT_MAX, FLAGS },
-    { "out_4_height", "set height of output 4", OFFSET(out_4_height), AV_OPT_TYPE_INT, { .i64 = 144 }, 144, INT_MAX, FLAGS },
+    { "out_1_width", "set width of output 1", OFFSET(out_1_width), AV_OPT_TYPE_INT, { .i64 = 1280 }, 424, INT_MAX, FLAGS },
+    { "out_1_height", "set height of output 1", OFFSET(out_1_height), AV_OPT_TYPE_INT, { .i64 = 720 }, 240, INT_MAX, FLAGS },
+    { "out_2_width", "set width of output 2", OFFSET(out_2_width), AV_OPT_TYPE_INT, { .i64 = 852 }, 424, INT_MAX, FLAGS },
+    { "out_2_height", "set height of output 2", OFFSET(out_2_height), AV_OPT_TYPE_INT, { .i64 = 480 }, 240, INT_MAX, FLAGS },
+    { "out_3_width", "set width of output 3", OFFSET(out_3_width), AV_OPT_TYPE_INT, { .i64 = 640 }, 424, INT_MAX, FLAGS },
+    { "out_3_height", "set height of output 3", OFFSET(out_3_height), AV_OPT_TYPE_INT, { .i64 = 360 }, 240, INT_MAX, FLAGS },
+    { "out_4_width", "set width of output 4", OFFSET(out_4_width), AV_OPT_TYPE_INT, { .i64 = 424 }, 424, INT_MAX, FLAGS },
+    { "out_4_height", "set height of output 4", OFFSET(out_4_height), AV_OPT_TYPE_INT, { .i64 = 240 }, 240, INT_MAX, FLAGS },
     { NULL }
 };
 
