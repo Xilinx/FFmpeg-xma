@@ -22,6 +22,9 @@ typedef struct vyusynch264Context {
     const AVClass     *class;
     XmaDecoderSession *dec_session;
     unsigned int       intraOnly;
+    XmaFrameProperties fprops;
+    XmaFrame          *xmaFrame;
+    int                latencyFrames;
 } vyusynch264Context;
 
 #define OFFSET(x) offsetof(vyusynch264Context, x)
@@ -34,6 +37,8 @@ static const AVOption options[] = {
 static av_cold int vyusynch264_decode_close(AVCodecContext *avctx)
 {
     vyusynch264Context *ctx = avctx->priv_data;
+
+    xma_frame_free(ctx->xmaFrame);
 
     xma_dec_session_destroy(ctx->dec_session);
 
@@ -50,6 +55,37 @@ static av_cold int vyusynch264_decode_init(AVCodecContext *avctx)
     dec_props.hwdecoder_type = XMA_H264_DECODER_TYPE;
     strcpy(dec_props.hwvendor_string, "vyusync");
     dec_props.intraOnly = ctx->intraOnly;
+    ctx->fprops.width = avctx->width;
+    ctx->fprops.height = avctx->height;
+    switch(avctx->pix_fmt)
+    {
+    case AV_PIX_FMT_YUV420P:
+    	ctx->fprops.format = XMA_YUV420_FMT_TYPE;
+        ctx->fprops.bits_per_pixel = 8;
+    	break;
+    case AV_PIX_FMT_YUV422P:
+    	ctx->fprops.format = XMA_YUV422_FMT_TYPE;
+        ctx->fprops.bits_per_pixel = 8;
+    	break;
+    case AV_PIX_FMT_YUV444P:
+    	ctx->fprops.format = XMA_YUV444_FMT_TYPE;
+        ctx->fprops.bits_per_pixel = 8;
+    	break;
+    case AV_PIX_FMT_YUV420P16LE:
+    	ctx->fprops.format = XMA_YUV420_FMT_TYPE;
+        ctx->fprops.bits_per_pixel = 16;
+    	break;
+    case AV_PIX_FMT_YUV422P16LE:
+    	ctx->fprops.format = XMA_YUV422_FMT_TYPE;
+        ctx->fprops.bits_per_pixel = 16;
+    	break;
+    case AV_PIX_FMT_YUV444P16LE:
+    	ctx->fprops.format = XMA_YUV444_FMT_TYPE;
+        ctx->fprops.bits_per_pixel = 16;
+    	break;
+    }
+	ctx->xmaFrame = xma_frame_alloc(&ctx->fprops);
+    ctx->latencyFrames = 0;
 
     printf("creating dec session\n");
     ctx->dec_session = xma_dec_session_create(&dec_props);
@@ -65,7 +101,6 @@ static int vyusynch264_decode(AVCodecContext *avctx, void *data, int *got_frame,
 	vyusynch264Context *ctx            = avctx->priv_data;
     AVFrame            *pict           = data;
 	XmaFrameProperties fprops          = {0};
-	XmaFrame           *xmaFrame;
 	unsigned char      *src_data[4]    = {NULL};
 
 	int32_t            data_used       = 0;
@@ -76,9 +111,13 @@ static int vyusynch264_decode(AVCodecContext *avctx, void *data, int *got_frame,
     	// EOF reached
         rc = xma_dec_session_send_data(ctx->dec_session, NULL, &data_used);
     }else{
-    	XmaDataBuffer* buf = xma_data_from_buffer_clone(avpkt->data, avpkt->size);
-        rc = xma_dec_session_send_data(ctx->dec_session, buf, &data_used);
+		XmaDataBuffer* buf = xma_data_from_buffer_clone(avpkt->data, avpkt->size);
+		rc = xma_dec_session_send_data(ctx->dec_session, buf, &data_used);
+		xma_data_buffer_free(buf);
+		ctx->latencyFrames++;
     }
+    if (ctx->latencyFrames > 30)
+    	usleep(ctx->latencyFrames * 100);
     rc = xma_dec_session_get_properties(ctx->dec_session, &fprops);
     if (rc == -2)
     {
@@ -87,11 +126,20 @@ static int vyusynch264_decode(AVCodecContext *avctx, void *data, int *got_frame,
     }
 	if (rc != 0)
 	{
-		if (data_used == 0)
+		if ((data_used == 0) || ((data_used < avpkt->size) && (avpkt->size > 0)))
 		{
 			while (rc != 0)
 			{
-		        rc = xma_dec_session_send_data(ctx->dec_session, NULL, &data_used);
+				int32_t used = 0;
+				if (data_used < avpkt->size)
+				{
+					XmaDataBuffer* buf = xma_data_from_buffer_clone(avpkt->data + data_used, avpkt->size - data_used);
+					rc = xma_dec_session_send_data(ctx->dec_session, buf, &used);
+					xma_data_buffer_free(buf);
+				}else{
+			        rc = xma_dec_session_send_data(ctx->dec_session, NULL, &data_used);
+				}
+				data_used += used;
 				rc = xma_dec_session_get_properties(ctx->dec_session, &fprops);
 			    if (rc == -2)
 			    {
@@ -104,49 +152,45 @@ static int vyusynch264_decode(AVCodecContext *avctx, void *data, int *got_frame,
 			return 0;
 		}
 	}
-	xmaFrame = xma_frame_alloc(&fprops);
-	rc = xma_dec_session_recv_frame(ctx->dec_session, xmaFrame);
+	rc = xma_dec_session_recv_frame(ctx->dec_session, ctx->xmaFrame);
 	if (rc != 0)
 	{
-		xma_frame_free(xmaFrame);
 		*got_frame = 0;
 		return 0;
 	}
 
-	src_data[0] = xmaFrame->data[0].buffer;
-	src_data[1] = xmaFrame->data[1].buffer;
-	src_data[2] = xmaFrame->data[2].buffer;
-	src_data[3] = xmaFrame->data[0].buffer;
-	pict->linesize[3] = pict->linesize[0] = fprops.width * ((fprops.bits_per_pixel + 7) >> 3);
+	src_data[0] = ctx->xmaFrame->data[0].buffer;
+	src_data[1] = ctx->xmaFrame->data[1].buffer;
+	src_data[2] = ctx->xmaFrame->data[2].buffer;
+	src_data[3] = ctx->xmaFrame->data[0].buffer;
+
+    pict->linesize[3] = pict->linesize[0] = fprops.width * ((fprops.bits_per_pixel + 7) >> 3);
 
     pict->width = fprops.width;
     pict->height = fprops.height;
+    pict->format = avctx->pix_fmt;
 
 	switch (fprops.format)
 	{
 	case XMA_YUV420_FMT_TYPE:
 		pict->linesize[1] = pict->linesize[2] = pict->linesize[0] / 2;
-	    pict->format = AV_PIX_FMT_YUV420P;
 		break;
 	case XMA_YUV422_FMT_TYPE:
 		pict->linesize[1] = pict->linesize[2] = pict->linesize[0] / 2;
-		pict->format = AV_PIX_FMT_YUV422P;
 		break;
 	case XMA_YUV444_FMT_TYPE:
 		pict->linesize[1] = pict->linesize[2] = pict->linesize[0];
-		pict->format = AV_PIX_FMT_YUV444P;
 		break;
 	default:
-		xma_frame_free(xmaFrame);
 		*got_frame = 0;
 		return 0;
 	}
 
     av_frame_get_buffer (pict, 32);
-	av_image_copy (pict->data, pict->linesize, (const uint8_t**)src_data, pict->linesize, pict->format, fprops.width, fprops.height);
+	av_image_copy (pict->data, pict->linesize, (const uint8_t**)src_data, pict->linesize, avctx->pix_fmt, fprops.width, fprops.height);
 
-	xma_frame_free(xmaFrame);
 	*got_frame = 1;
+	ctx->latencyFrames--;
 	return data_used;
 }
 
@@ -155,6 +199,9 @@ static const enum AVPixelFormat vyusynch264_csp_eight[] = {
     AV_PIX_FMT_YUV420P,
     AV_PIX_FMT_YUV422P,
     AV_PIX_FMT_YUV444P,
+	AV_PIX_FMT_YUV420P16LE,
+	AV_PIX_FMT_YUV422P16LE,
+	AV_PIX_FMT_YUV444P16LE,
     AV_PIX_FMT_NONE
 };
 
