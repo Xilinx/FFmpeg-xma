@@ -119,16 +119,16 @@ static int vyusynch264_decode(AVCodecContext *avctx, void *data, int *got_frame,
     if (ctx->latencyFrames > 30)
     	usleep(ctx->latencyFrames * 100);
     rc = xma_dec_session_get_properties(ctx->dec_session, &fprops);
-    if (rc == -2)
+    if (rc == XMA_END_OF_FILE)
     {
         *got_frame = 0;
         return 0;
     }
-	if (rc != 0)
+	if (rc != XMA_SUCCESS)
 	{
 		if ((data_used == 0) || ((data_used < avpkt->size) && (avpkt->size > 0)))
 		{
-			while (rc != 0)
+			while (rc != XMA_SUCCESS)
 			{
 				int32_t used = 0;
 				if (data_used < avpkt->size)
@@ -141,7 +141,7 @@ static int vyusynch264_decode(AVCodecContext *avctx, void *data, int *got_frame,
 				}
 				data_used += used;
 				rc = xma_dec_session_get_properties(ctx->dec_session, &fprops);
-			    if (rc == -2)
+			    if (rc == XMA_END_OF_FILE)
 			    {
 			        *got_frame = 0;
 			        return 0;
@@ -153,7 +153,7 @@ static int vyusynch264_decode(AVCodecContext *avctx, void *data, int *got_frame,
 		}
 	}
 	rc = xma_dec_session_recv_frame(ctx->dec_session, ctx->xmaFrame);
-	if (rc != 0)
+	if (rc != XMA_SUCCESS)
 	{
 		*got_frame = 0;
 		return 0;
