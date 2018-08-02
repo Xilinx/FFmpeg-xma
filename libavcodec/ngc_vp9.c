@@ -14,7 +14,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <fcntl.h>
-#include <xma.h>
+#include "xma.h"
 #include <pthread.h>
 
 #define SDXL
@@ -34,7 +34,7 @@ typedef struct ngcvp9Context {
 
     ngcvp9_encoder encoder;
     AVFrame        *tmp_frame;
-    //ngcvp9_param   *params;
+    char *tempOutBuff;
     int paramSet;
     int nFrameNum;
     unsigned int FixedQP;
@@ -44,14 +44,21 @@ typedef struct ngcvp9Context {
     unsigned int rc_lookahead;
     unsigned int aq_mode;
     unsigned int idr_period;
+    int temp_aq_gain;
+    int spat_aq_gain;
+    int minQP;
+    XmaDataBuffer *m_OutBuffer;
 } ngcvp9Context;
 
 #define OFFSET(x) offsetof(ngcvp9Context, x)
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
     { "aq-mode",       "AQ method",                                OFFSET(aq_mode),       AV_OPT_TYPE_INT,    { .i64 = 1}, 0, 1, VE, "aq_mode"},
-    { "rc-lookahead",  "Number of frames to look ahead for frametype and ratecontrol", OFFSET(rc_lookahead), AV_OPT_TYPE_INT, { .i64 = 8 }, 8, 64, VE },
+    { "rc-lookahead",  "Number of frames to look ahead for frametype and ratecontrol", OFFSET(rc_lookahead), AV_OPT_TYPE_INT, { .i64 = 30 }, 8, 64, VE },
     { "idr-period",       "IDR Period",                                OFFSET(idr_period),       AV_OPT_TYPE_INT,    { .i64 = 0 }, 0, INT_MAX, VE, "idr_period"},
+    { "aq-temp-gain", "Temporal AQ strength. Reduces blocking and blurring in flat and textured areas.", OFFSET(temp_aq_gain), AV_OPT_TYPE_INT, {.i64 = 100}, 50, 200, VE,"temp_aq_gain"},
+    { "aq-spat-gain", "Spatial AQ strength. Reduces blocking and blurring in flat and textured areas.", OFFSET(spat_aq_gain), AV_OPT_TYPE_INT, {.i64 = 100}, 50, 200, VE,"spat_aq_gain"},
+    { "minQP",       "MIN QP for capped VBR",                                OFFSET(minQP),       AV_OPT_TYPE_INT,    { .i64 = -12}, -12, 51, VE, "minQP"},
     { NULL },
 };
 
@@ -64,7 +71,8 @@ static av_cold int ngcvp9_encode_close(AVCodecContext *avctx)
     ngcvp9Context *ctx = avctx->priv_data;
 
     av_frame_free(&ctx->tmp_frame);
-
+    free(ctx->tempOutBuff);
+    xma_data_buffer_free(ctx->m_OutBuffer);
     //ngcvp9_param_free(ctx->params);
 
 
@@ -132,7 +140,7 @@ static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
       ctx->tmp_frame->height = avctx->height;
       ctx->tmp_frame->format = AV_PIX_FMT_YUV420P;
 
-      ret = av_frame_get_buffer(ctx->tmp_frame, 32);
+      ret = av_frame_get_buffer(ctx->tmp_frame, 8);
       if (ret < 0)
         printf("tmp frame get buffer failed\n");
       else
@@ -141,7 +149,7 @@ static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
       }
 
     }
-    printf("width=%d height = %d rc=%d\n",avctx->width,avctx->height,avctx->bit_rate);
+    printf("width=%d height = %d rc=%d minQP =%d\n",avctx->width,avctx->height,avctx->bit_rate,ctx->minQP);
     XmaEncoderProperties enc_props;
     enc_props.hwencoder_type = XMA_VP9_ENCODER_TYPE;
 
@@ -159,9 +167,18 @@ static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
     enc_props.idr_interval = ctx->idr_period;
     enc_props.lookahead_depth = ctx->rc_lookahead;
     enc_props.aq_mode = ctx->aq_mode;
-    printf("creating enc session\n");
+    enc_props.temp_aq_gain = ctx->temp_aq_gain;
+    enc_props.spat_aq_gain = ctx->spat_aq_gain;
+    enc_props.minQP 	   = ctx->minQP;
+    printf("creating enc session minQP = %d\n",enc_props.minQP);
     ctx->encoder.m_pEnc_session = xma_enc_session_create(&enc_props);
+    if (!ctx->encoder.m_pEnc_session) {
+        printf("ERROR: Unable to allocate NGCVP9 encoder session\n");
+        return -1;
+    }
     printf("session : %x \n",ctx->encoder.m_pEnc_session);
+    ctx->tempOutBuff = malloc(avctx->width*avctx->height*2);
+    ctx->m_OutBuffer =  xma_data_from_buffer_clone(ctx->tempOutBuff, avctx->width*avctx->height);
     return 0;
 }
 
@@ -174,7 +191,7 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     unsigned long out_size;
     XmaFrameProperties fprops;
     XmaFrameData       frame_data;
-    printf("framenum = %d\n",ctx->encoder.m_nFrameNum);
+    //printf("framenum = %d\n",ctx->encoder.m_nFrameNum);
 
     fprops.format = XMA_YUV420_FMT_TYPE;
     fprops.width = avctx->width;
@@ -187,7 +204,6 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     if(!pic)
     {
-
       printf("got enc EOF\n");
       if(ctx->encoder.m_nOutFrameNum >= ctx->encoder.m_nFrameNum)
       {
@@ -204,7 +220,7 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
       unsigned char bIsLastOutput = 0;
       while(bIsLastOutput == 0)
       {
-         printf("out num %d in num %d\n",ctx->encoder.m_nOutFrameNum,ctx->encoder.m_nFrameNum);
+         //printf("out num %d in num %d\n",ctx->encoder.m_nOutFrameNum,ctx->encoder.m_nFrameNum);
          out_size = 0;
          if(nSize>0)
            frame->is_last_frame = 0;        
@@ -242,12 +258,51 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     *got_packet = 0;
     out_size = 0;
-    // Create a frame
+    //printf("linesize %d %d w h %d %d\n",pic->linesize[0],pic->linesize[1],avctx->width,avctx->height); 
+    if(1)//pic->linesize[0] != avctx->width)
+    {
+	uint64_t bufY,bufU,bufV;
+        if(pic->linesize[0] != avctx->width)
+        {
+            av_image_copy_plane(ctx->tmp_frame->data[0], ctx->tmp_frame->linesize[0],
+                             pic->data[0],pic->linesize[0],avctx->width, avctx->height);
+            bufY = ctx->tmp_frame->data[0];
+        }
+        else
+        {
+            bufY = pic->data[0];
+        }
+        if(pic->linesize[1] != avctx->width/2)
+        {
+            av_image_copy_plane(ctx->tmp_frame->data[1], ctx->tmp_frame->linesize[1],
+                           pic->data[1],pic->linesize[1],avctx->width/2, avctx->height/2);
+            bufU = ctx->tmp_frame->data[1];
+        }
+        else
+        {
+            bufU = pic->data[1];
+        }
+        if(pic->linesize[2] != avctx->width/2)
+        {
+            av_image_copy_plane(ctx->tmp_frame->data[2], ctx->tmp_frame->linesize[2],
+                           pic->data[2],pic->linesize[2],avctx->width/2, avctx->height/2);
+            bufV = ctx->tmp_frame->data[2];
+        }
+        else
+        {
+            bufV = pic->data[2];
+        }
+        frame_data.data[0] = bufY;
+        frame_data.data[1] = bufU;
+        frame_data.data[2] = bufV;
+    }
+    else
+    {
 
-    frame_data.data[0] = pic->data[0];
-    frame_data.data[1] = pic->data[1];
-    frame_data.data[2] = pic->data[2];
-
+        frame_data.data[0] = pic->data[0];
+        frame_data.data[1] = pic->data[1];
+        frame_data.data[2] = pic->data[2];
+    }
     XmaFrame *frame = xma_frame_from_buffers_clone(&fprops,&frame_data);
     frame->is_idr=0;
     frame->do_not_encode = 0;
@@ -256,24 +311,25 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     int rc = xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, frame);
     //usleep(100*1000);
     out_size = 0;
-    rc = ff_alloc_packet(pkt, fprops.width * fprops.height);
-    XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(pkt->data, fprops.width * fprops.height);
+    //rc = ff_alloc_packet(pkt, fprops.width * fprops.height);
+    //char *tmpOut = (char *)malloc(fprops.width * fprops.height);
+    //XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(ctx->tempOutBuff, fprops.width * fprops.height);
     int nCount=0;
 #if 1
-    if(ctx->encoder.m_nFrameNum < (ctx->rc_lookahead+23))
+    if(ctx->encoder.m_nFrameNum < (ctx->rc_lookahead+40))
     {
         /*ctx->nFrameNum++;
         ctx->encoder.m_nFrameNum++;
         *got_packet = 0;
           return 0;*/
-        rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
+        rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, ctx->m_OutBuffer, &out_size);
     }
     else {
     
 #endif
     do{
 	//usleep(5*1000);
-        rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
+        rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, ctx->m_OutBuffer, &out_size);
         //printf("out_size=%d\n",out_size);
 	nCount++;
     }while(out_size == 0);
@@ -282,6 +338,8 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     if(out_size != 0)
     {
       int rc = ff_alloc_packet(pkt, out_size);
+      memcpy(pkt->data,ctx->tempOutBuff,out_size);
+      //free(tmpOut);
       if (rc < 0) {
        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
        return rc;
@@ -298,8 +356,7 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     }
     if(frame)
 	xma_frame_free(frame);
-    if(out_buffer)
-	xma_data_buffer_free(out_buffer);
+
     ctx->nFrameNum++;
     ctx->encoder.m_nFrameNum++;
 

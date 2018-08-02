@@ -14,18 +14,18 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <fcntl.h>
-#include <xma.h>
-
-
+#include "xma.h"
+#include <pthread.h>
 
 #define SDXL
-#define NUM_REF_FRAMES_NGC 40
+
+
 typedef struct ngc265_encoder
 {
 
-    unsigned int      m_nFrameNum;
-    unsigned int      m_nOutFrameNum;
-    XmaEncoderSession *m_pEnc_session;
+  unsigned int      m_nFrameNum;
+  unsigned int      m_nOutFrameNum;
+  XmaEncoderSession *m_pEnc_session;
 }ngc265_encoder;
 
 
@@ -43,32 +43,22 @@ typedef struct ngc265Context {
     unsigned int bitrateKbps;
     unsigned int rc_lookahead;
     unsigned int aq_mode;
-    unsigned int temp_aq_gain;
-    unsigned int spat_aq_gain;
-    int qp_offset_I;
-    int qp_offset_B0;
-    int qp_offset_B1;
-    int qp_offset_B2;
     unsigned int idr_period;
+    int temp_aq_gain;
+    int spat_aq_gain;
+    int minQP;
+
 } ngc265Context;
-
-
 
 #define OFFSET(x) offsetof(ngc265Context, x)
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
-    //{ "qp",          "Constant quantization parameter rate control method",OFFSET(cqp),        AV_OPT_TYPE_INT,    { .i64 = -1 }, -1, INT_MAX, VE },
-    { "aq-mode",       "AQ method",                                OFFSET(aq_mode),       AV_OPT_TYPE_INT,    { .i64 = 1 }, 0, 1, VE, "aq_mode"},
+    { "aq-mode",       "AQ method",                                OFFSET(aq_mode),       AV_OPT_TYPE_INT,    { .i64 = 1}, 0, 1, VE, "aq_mode"},
+    { "rc-lookahead",  "Number of frames to look ahead for frametype and ratecontrol", OFFSET(rc_lookahead), AV_OPT_TYPE_INT, { .i64 = 30 }, 8, 64, VE },
+    { "idr-period",       "IDR Period",                                OFFSET(idr_period),       AV_OPT_TYPE_INT,    { .i64 = 0 }, 0, INT_MAX, VE, "idr_period"},
     { "aq-temp-gain", "Temporal AQ strength. Reduces blocking and blurring in flat and textured areas.", OFFSET(temp_aq_gain), AV_OPT_TYPE_INT, {.i64 = 100}, 50, 200, VE,"temp_aq_gain"},
     { "aq-spat-gain", "Spatial AQ strength. Reduces blocking and blurring in flat and textured areas.", OFFSET(spat_aq_gain), AV_OPT_TYPE_INT, {.i64 = 100}, 50, 200, VE,"spat_aq_gain"},
-    { "rc-lookahead",  "Number of frames to look ahead for frametype and ratecontrol", OFFSET(rc_lookahead), AV_OPT_TYPE_INT, { .i64 = 30 }, 8, 64, VE },
-    { "qp-offset-I", "Offset for QP of I Frames",OFFSET(qp_offset_I),AV_OPT_TYPE_INT,   { .i64 = -4 }, -10, 10, VE,"QP_I_Offset" },
-    { "qp-offset-B0", "Offset for QP of B0 Frames",OFFSET(qp_offset_B0),AV_OPT_TYPE_INT,   { .i64 = 1 }, -10, 10, VE,"QP_B0_Offset" },
-    { "qp-offset-B1", "Offset for QP of B1 Frames",OFFSET(qp_offset_B1),AV_OPT_TYPE_INT,   { .i64 = 2 }, -10, 10, VE,"QP_B1_Offset" },
-    { "qp-offset-B2", "Offset for QP of B2 Frames",OFFSET(qp_offset_B2),AV_OPT_TYPE_INT,   { .i64 = 2 }, -10, 10, VE,"QP_B2_Offset" },
-    //{ "deblock",       "Loop filter parameters, in <alpha:beta> form.",   OFFSET(deblock),       AV_OPT_TYPE_STRING, { 0 },  0, 0, VE},
-    //{ "ngc265-opts",  "Override the x264 configuration using a :-separated list of key=value parameters", OFFSET(ngc265_opts), AV_OPT_TYPE_STRING, { 0 }, 0, 0, VE },
-    { "idr-period",       "IDR Period",                                OFFSET(idr_period),       AV_OPT_TYPE_INT,    { .i64 = 0 }, 0, INT_MAX, VE, "idr_period"},
+    { "minQP",       "MIN QP for capped VBR",                                OFFSET(minQP),       AV_OPT_TYPE_INT,    { .i64 = -12}, -12, 51, VE, "minQP"},
     { NULL },
 };
 
@@ -79,10 +69,11 @@ static av_cold int ngc265_encode_close(AVCodecContext *avctx)
     ngc265Context *ctx = avctx->priv_data;
     printf("ngc close\n");
     av_frame_free(&ctx->tmp_frame);
+    xma_enc_session_destroy(ctx->encoder.m_pEnc_session);
     return 0;
 }
 
-
+#define NUM_REF_FRAMES_NGC 46
 static av_cold int ngc265_encode_init(AVCodecContext *avctx)
 {
     ngc265Context *ctx = avctx->priv_data;
@@ -92,65 +83,57 @@ static av_cold int ngc265_encode_init(AVCodecContext *avctx)
 
     ctx->encoder.m_nFrameNum = 0;
     ctx->encoder.m_nOutFrameNum = 0;
+
     ctx->paramSet = 0;
     ctx->nFrameNum = 0;
-
-
+    ctx->Intra_Period = 0;
+    ctx->fps = 25;
+    ctx->bitrateKbps = 0;
     ctx->FixedQP = 35;
     if (avctx->bit_rate > 0) {
-      printf("bitrate set as %ld\n",avctx->bit_rate);
-      ctx->bitrateKbps = avctx->bit_rate/1000;
+        printf("bitrate set as %d\n",avctx->bit_rate);
+        ctx->bitrateKbps = avctx->bit_rate/1000;
     }
     if (avctx->gop_size > 0) {
-      printf("gop set as %d\n",avctx->gop_size);
-      ctx->Intra_Period = avctx->gop_size;
-      printf("gop set as %d\n",ctx->Intra_Period);
+        printf("gop set as %d\n",avctx->gop_size);
+        ctx->Intra_Period = avctx->gop_size;
+        //printf("gop set as %d\n",ctx->Intra_Period);
     }
     if (avctx->global_quality > 0){
-      printf("qp set as %d\n",avctx->global_quality/FF_QP2LAMBDA);
-      ctx->FixedQP = avctx->global_quality/FF_QP2LAMBDA;
+      	printf("qp set as %d\n",avctx->global_quality/FF_QP2LAMBDA);
+      	ctx->FixedQP = avctx->global_quality/FF_QP2LAMBDA;
     }
-    printf("fps set as %d/%d\n",avctx->framerate.num,avctx->framerate.den);
+    //printf("fps set as %d/%d\n",avctx->framerate.num,avctx->framerate.den);
     if (avctx->time_base.den > 0) {
         int fpsNum = avctx->time_base.den;
         int fpsDenom = avctx->time_base.num * avctx->ticks_per_frame;
         int fps = fpsNum/fpsDenom;
         printf("fps set as %d/%d=%d\n",avctx->framerate.num,avctx->framerate.den,fps);
         ctx->fps = fps;
-        printf("fps set\n");
+        //printf("fps set\n");
     }
+    printf("aq=%d\n",ctx->aq_mode);
+#if 0
     if(avctx->max_b_frames == 0)
     {
         printf("No B- frames use MrfMode \n");
     }
     if(ctx->rc_lookahead)
       printf("la=%d\n",ctx->rc_lookahead);
-    if(ctx->aq_mode)
-      printf("aq=%d\n",ctx->aq_mode);
     if(ctx->idr_period)
       printf("idr=%d\n",ctx->idr_period);
-    if(ctx->temp_aq_gain)
-      printf("temp_aq_gain = %d\n",ctx->temp_aq_gain);
-    if(ctx->spat_aq_gain)
-      printf("spat_aq_gain = %d\n",ctx->spat_aq_gain);
-    if(ctx->qp_offset_I)
-      printf("qp I Offset = %d\n",ctx->qp_offset_I);
-    if(ctx->qp_offset_B0)
-      printf("qp B0 Offset = %d\n",ctx->qp_offset_B0);
-    if(ctx->qp_offset_B1)
-      printf("qp B1 Offset = %d\n",ctx->qp_offset_B1);
-    if(ctx->qp_offset_B2)
-      printf("qp B2 Offset = %d\n",ctx->qp_offset_B2);
+#endif
     ctx->paramSet = 1;
     ctx->tmp_frame = av_frame_alloc();
     if (!ctx->tmp_frame)
         printf("temp frame alloc failed\n");
     else
     {
-      int ret = av_frame_get_buffer(ctx->tmp_frame, 32);
       ctx->tmp_frame->width  = avctx->width;
       ctx->tmp_frame->height = avctx->height;
       ctx->tmp_frame->format = AV_PIX_FMT_YUV420P;
+
+      int ret = av_frame_get_buffer(ctx->tmp_frame, 8);
       if (ret < 0)
         printf("tmp frame get buffer failed\n");
       else
@@ -159,7 +142,7 @@ static av_cold int ngc265_encode_init(AVCodecContext *avctx)
       }
 
     }
-    printf("width=%d height = %d rc=%d\n",avctx->width,avctx->height,avctx->bit_rate);
+    printf("width=%d height = %d rc=%d minQP =%d\n",avctx->width,avctx->height,avctx->bit_rate,ctx->minQP);
     XmaEncoderProperties enc_props;
     enc_props.hwencoder_type = XMA_HEVC_ENCODER_TYPE;
 
@@ -176,17 +159,16 @@ static av_cold int ngc265_encode_init(AVCodecContext *avctx)
     enc_props.gop_size = ctx->Intra_Period;
     enc_props.idr_interval = ctx->idr_period;
     enc_props.lookahead_depth = ctx->rc_lookahead;
-    enc_props.qp_offset_I = ctx->qp_offset_I;
-    enc_props.qp_offset_B0 = ctx->qp_offset_B0;
-    enc_props.qp_offset_B1 = ctx->qp_offset_B1;
-    enc_props.qp_offset_B2 = ctx->qp_offset_B2;
+    enc_props.aq_mode = ctx->aq_mode;
     enc_props.temp_aq_gain = ctx->temp_aq_gain;
     enc_props.spat_aq_gain = ctx->spat_aq_gain;
-    printf("creating enc session\n");
+    enc_props.minQP 	   = ctx->minQP;
+    printf("creating enc session minQP = %d\n",enc_props.minQP);
     ctx->encoder.m_pEnc_session = xma_enc_session_create(&enc_props);
-    if (!ctx->encoder.m_pEnc_session)
+    if(!ctx->encoder.m_pEnc_session) {
+        printf("ERROR: Unable to allocate NGCHEVC encoder session\n");
         return -1;
-
+    }
     printf("session : %x \n",ctx->encoder.m_pEnc_session);
     return 0;
 }
@@ -195,97 +177,166 @@ static av_cold int ngc265_encode_init(AVCodecContext *avctx)
 static int ngc265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                                 const AVFrame *pic, int *got_packet)
 {
+
     ngc265Context *ctx = avctx->priv_data;
-    unsigned long out_size,ptr;
-    int rc = 0;
-    if(!pic)
-    {
-
-      printf("got enc EOF\n");
-      if(ctx->encoder.m_nOutFrameNum >= ctx->encoder.m_nFrameNum)
-      {
-        printf("returning EOF\n");
-        *got_packet = 0;
-        return AVERROR_EOF;
-      }
-
-      rc = xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, NULL);
-
-      printf("out num %d in num %d\n",ctx->encoder.m_nOutFrameNum,ctx->encoder.m_nFrameNum);
-      char *temp = malloc(avctx->width * avctx->height * (ctx->encoder.m_nOutFrameNum - ctx->encoder.m_nFrameNum));
-      unsigned long nSize = 0;
-      while(ctx->encoder.m_nOutFrameNum < ctx->encoder.m_nFrameNum)
-      {
-          out_size = 0;
-            XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(temp+nSize, avctx->width * avctx->height);
-            do{
-              rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
-              nSize += out_size;
-
-            }while(out_size == 0);
-
-            ctx->encoder.m_nOutFrameNum++;
-      }
-      	if(nSize > 0)
-        {
-      	     printf("nsize=%d\n",nSize);
-             int rc = ff_alloc_packet(pkt, nSize);
-      	     memcpy(pkt->data,temp,nSize);
-      	     free(temp);
-                   if (rc < 0) {
-                       av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
-                       return rc;
-              	}
-      	    *got_packet = 1;
-      	    return 0;
-      	}
-        else
-      	{
-             *got_packet = 0;
-             return AVERROR_EOF;
-      	}
-    }
-
-    *got_packet = 0;
-    out_size = 0;
-    // Create a frame
+    unsigned long out_size;
     XmaFrameProperties fprops;
+    XmaFrameData       frame_data;
+    //printf("framenum = %d\n",ctx->encoder.m_nFrameNum);
+
     fprops.format = XMA_YUV420_FMT_TYPE;
     fprops.width = avctx->width;
     fprops.height = avctx->height;
     fprops.bits_per_pixel = 8;
-    XmaFrameData       frame_data;
 
-    frame_data.data[0] = pic->data[0];
-    frame_data.data[1] = pic->data[1];
-    frame_data.data[2] = pic->data[2];
+    frame_data.data[0] = NULL;
+    frame_data.data[1] = NULL;
+    frame_data.data[2] = NULL;
 
-    // Only send 1 frame for now until the IP is corrected
-
-    XmaFrame *frame = xma_frame_from_buffers_clone(&fprops,&frame_data);
-
-    rc = xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, frame);
-    if(ctx->encoder.m_nFrameNum < (NUM_REF_FRAMES_NGC-1))
+    if(!pic)
     {
-        ctx->nFrameNum++;
-        ctx->encoder.m_nFrameNum++;
+      printf("got enc EOF\n");
+      if(ctx->encoder.m_nOutFrameNum >= ctx->encoder.m_nFrameNum)
+      {
+          printf("returning EOF\n");
+	        *got_packet = 0;
+          return AVERROR_EOF;
+      }
+      XmaFrame *frame = xma_frame_from_buffers_clone(&fprops,&frame_data);
+      frame->is_idr=0;
+      frame->do_not_encode = 1;
+      frame->is_last_frame = 1;
+      char *temp = malloc(avctx->width * avctx->height * (ctx->encoder.m_nOutFrameNum - ctx->encoder.m_nFrameNum));
+      unsigned long nSize = 0;
+      unsigned char bIsLastOutput = 0;
+      while(bIsLastOutput == 0)
+      {
+         //printf("out num %d in num %d\n",ctx->encoder.m_nOutFrameNum,ctx->encoder.m_nFrameNum);
+         out_size = 0;
+         if(nSize>0)
+           frame->is_last_frame = 0;        
+         xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, frame);
+
+         XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(temp+nSize, avctx->width * avctx->height);
+         do{
+              xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
+              nSize += out_size;
+
+          }while(out_size == 0);
+          if(out_buffer)
+             xma_data_buffer_free(out_buffer);
+
+          bIsLastOutput = out_buffer->is_eof;
+          ctx->encoder.m_nOutFrameNum++;
+      }
+      if(frame)
+        xma_frame_free(frame);
+      if(nSize > 0)
+      {
+        printf("nsize=%d\n",nSize);
+        int rc = ff_alloc_packet(pkt, nSize);
+        memcpy(pkt->data,temp,nSize);
+        free(temp);
+        if (rc < 0) 
+        {
+          av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
+          return rc;
+        }
+    	*got_packet = 1;
+    	return 0;
+      }
+      else
+      {
         *got_packet = 0;
-        //printf("got packet 0\n");
-        return 0;
+        return AVERROR_EOF;
+      }
     }
+
+    *got_packet = 0;
+    out_size = 0;
+    //printf("linesize %d %d w h %d %d\n",pic->linesize[0],pic->linesize[1],avctx->width,avctx->height); 
+    if(1)//pic->linesize[0] != avctx->width)
+    {
+	uint64_t bufY,bufU,bufV;
+        if(pic->linesize[0] != avctx->width)
+        {
+            av_image_copy_plane(ctx->tmp_frame->data[0], ctx->tmp_frame->linesize[0],
+                             pic->data[0],pic->linesize[0],avctx->width, avctx->height);
+            bufY = ctx->tmp_frame->data[0];
+        }
+        else
+        {
+            bufY = pic->data[0];
+        }
+        if(pic->linesize[1] != avctx->width/2)
+        {
+            av_image_copy_plane(ctx->tmp_frame->data[1], ctx->tmp_frame->linesize[1],
+                           pic->data[1],pic->linesize[1],avctx->width/2, avctx->height/2);
+            bufU = ctx->tmp_frame->data[1];
+        }
+        else
+        {
+            bufU = pic->data[1];
+        }
+        if(pic->linesize[2] != avctx->width/2)
+        {
+            av_image_copy_plane(ctx->tmp_frame->data[2], ctx->tmp_frame->linesize[2],
+                           pic->data[2],pic->linesize[2],avctx->width/2, avctx->height/2);
+            bufV = ctx->tmp_frame->data[2];
+        }
+        else
+        {
+            bufV = pic->data[2];
+        }
+        frame_data.data[0] = bufY;
+        frame_data.data[1] = bufU;
+        frame_data.data[2] = bufV;
+    }
+    else
+    {
+
+        frame_data.data[0] = pic->data[0];
+        frame_data.data[1] = pic->data[1];
+        frame_data.data[2] = pic->data[2];
+    }
+    XmaFrame *frame = xma_frame_from_buffers_clone(&fprops,&frame_data);
+    frame->is_idr=0;
+    frame->do_not_encode = 0;
+    frame->is_last_frame = 0;
+    //printf("linesize %d %d w %d h %d\n",pic->linesize[0],pic->linesize[1],pic->width,pic->height);
+    int rc = xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, frame);
+    //usleep(100*1000);
     out_size = 0;
     rc = ff_alloc_packet(pkt, fprops.width * fprops.height);
     XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(pkt->data, fprops.width * fprops.height);
-    do{
-        rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
-    }while(out_size == 0);
-    if(out_size > 0)
+    int nCount=0;
+#if 1
+    if(ctx->encoder.m_nFrameNum < (ctx->rc_lookahead+40))
     {
-        int rc = ff_alloc_packet(pkt, out_size);
-        if (rc < 0) {
-         av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
-         return rc;
-        }
+        /*ctx->nFrameNum++;
+        ctx->encoder.m_nFrameNum++;
+        *got_packet = 0;
+          return 0;*/
+        rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
+    }
+    else {
+    
+#endif
+    do{
+	//usleep(5*1000);
+        rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
+        //printf("out_size=%d\n",out_size);
+	nCount++;
+    }while(out_size == 0);
+    }
+    //printf("out_size=%d\n",out_size);
+    if(out_size != 0)
+    {
+      int rc = ff_alloc_packet(pkt, out_size);
+      if (rc < 0) {
+       av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
+       return rc;
+      }
 
         pkt->pts = pic->pts;
         pkt->dts = pic->pts;
@@ -304,9 +355,16 @@ static int ngc265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
           }
           memmove(pkt->data,pkt->data+nMarker,out_size - nMarker);
           rc = ff_alloc_packet(pkt, out_size - nMarker);
-	     }
+	 }
     }
-
+    else
+    {
+	*got_packet = 0;
+    }
+    if(frame)
+	xma_frame_free(frame);
+    if(out_buffer)
+	xma_data_buffer_free(out_buffer);
     ctx->nFrameNum++;
     ctx->encoder.m_nFrameNum++;
 
