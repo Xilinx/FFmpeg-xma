@@ -1,3 +1,23 @@
+/*
+* Copyright (c) 2018 NGCodec Inc
+*
+* This file is part of FFmpeg.
+*
+* FFmpeg is free software; you can redistribute it and/or
+* modify it under the terms of the GNU Lesser General Public
+* License as published by the Free Software Foundation; either
+* version 2.1 of the License, or (at your option) any later version.
+*
+* FFmpeg is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+* Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public
+* License along with FFmpeg; if not, write to the Free Software
+* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+*/
+
 #include "libavutil/internal.h"
 #include "libavutil/common.h"
 #include "libavutil/opt.h"
@@ -171,14 +191,14 @@ static av_cold int ngcvp9_encode_init(AVCodecContext *avctx)
     enc_props.spat_aq_gain = ctx->spat_aq_gain;
     enc_props.minQP 	   = ctx->minQP;
     printf("creating enc session minQP = %d\n",enc_props.minQP);
-    ctx->encoder.m_pEnc_session = xma_enc_session_create(&enc_props);
-    if (!ctx->encoder.m_pEnc_session) {
-        printf("ERROR: Unable to allocate NGCVP9 encoder session\n");
-        return -1;
-    }
-    printf("session : %x \n",ctx->encoder.m_pEnc_session);
+    int rc = ctx->encoder.m_pEnc_session = xma_enc_session_create(&enc_props);
+    printf("session : %x rc=%d\n",ctx->encoder.m_pEnc_session,rc);
+     if (!ctx->encoder.m_pEnc_session) {
+         printf("ERROR: Unable to allocate NGCVP9 encoder session\n");
+         return -1;
+    } 
     ctx->tempOutBuff = malloc(avctx->width*avctx->height*2);
-    ctx->m_OutBuffer =  xma_data_from_buffer_clone(ctx->tempOutBuff, avctx->width*avctx->height);
+    ctx->m_OutBuffer =  xma_data_from_buffer_clone(ctx->tempOutBuff, avctx->width*avctx->height*2);
     return 0;
 }
 
@@ -226,7 +246,7 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
            frame->is_last_frame = 0;        
          xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, frame);
 
-         XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(temp+nSize, avctx->width * avctx->height);
+         XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(temp+nSize, avctx->width * avctx->height*2);
          do{
               xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
               nSize += out_size;
@@ -307,6 +327,14 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     frame->is_idr=0;
     frame->do_not_encode = 0;
     frame->is_last_frame = 0;
+    frame->pts = pic->pts;
+    frame->time_base.numerator = avctx->time_base.num;
+    frame->time_base.denominator = avctx->time_base.den;
+    //Timestamp testing
+    //if(ctx->encoder.m_nFrameNum>=90)
+      //  frame->pts = (pic->pts + 50)*1000*avctx->time_base.num/avctx->time_base.den;
+
+    //printf("%ld %ld %ld\n",pic->pts,avctx->time_base.num,avctx->time_base.den);
     //printf("linesize %d %d w %d h %d\n",pic->linesize[0],pic->linesize[1],pic->width,pic->height);
     int rc = xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, frame);
     //usleep(100*1000);
@@ -316,8 +344,11 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     //XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(ctx->tempOutBuff, fprops.width * fprops.height);
     int nCount=0;
 #if 1
-    if(ctx->encoder.m_nFrameNum < (ctx->rc_lookahead+40))
+    if(rc == XMA_ERROR)
+	assert(0);
+    if(rc == XMA_SEND_MORE_DATA )
     {
+	//printf("returned more data\n");
         /*ctx->nFrameNum++;
         ctx->encoder.m_nFrameNum++;
         *got_packet = 0;
@@ -339,7 +370,6 @@ static int ngcvp9_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     {
       int rc = ff_alloc_packet(pkt, out_size);
       memcpy(pkt->data,ctx->tempOutBuff,out_size);
-      //free(tmpOut);
       if (rc < 0) {
        av_log(avctx, AV_LOG_ERROR, "Error getting output packet.\n");
        return rc;
