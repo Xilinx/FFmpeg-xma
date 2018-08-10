@@ -1,3 +1,23 @@
+/*
+* Copyright (c) 2018 NGCodec Inc
+*
+* This file is part of FFmpeg.
+*
+* FFmpeg is free software; you can redistribute it and/or
+* modify it under the terms of the GNU Lesser General Public
+* License as published by the Free Software Foundation; either
+* version 2.1 of the License, or (at your option) any later version.
+*
+* FFmpeg is distributed in the hope that it will be useful,
+* but WITHOUT ANY WARRANTY; without even the implied warranty of
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+* Lesser General Public License for more details.
+*
+* You should have received a copy of the GNU Lesser General Public
+* License along with FFmpeg; if not, write to the Free Software
+* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+*/
+
 #include "libavutil/internal.h"
 #include "libavutil/common.h"
 #include "libavutil/opt.h"
@@ -164,12 +184,13 @@ static av_cold int ngc265_encode_init(AVCodecContext *avctx)
     enc_props.spat_aq_gain = ctx->spat_aq_gain;
     enc_props.minQP 	   = ctx->minQP;
     printf("creating enc session minQP = %d\n",enc_props.minQP);
-    ctx->encoder.m_pEnc_session = xma_enc_session_create(&enc_props);
-    if(!ctx->encoder.m_pEnc_session) {
-        printf("ERROR: Unable to allocate NGCHEVC encoder session\n");
+    int rc = ctx->encoder.m_pEnc_session = xma_enc_session_create(&enc_props);
+    printf("session : %x \n",ctx->encoder.m_pEnc_session);
+    
+    if (!ctx->encoder.m_pEnc_session) {
+        printf("ERROR: Unable to allocate NGCVP9 encoder session\n");
         return -1;
     }
-    printf("session : %x \n",ctx->encoder.m_pEnc_session);
     return 0;
 }
 
@@ -211,13 +232,14 @@ static int ngc265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
       unsigned char bIsLastOutput = 0;
       while(bIsLastOutput == 0)
       {
-         //printf("out num %d in num %d\n",ctx->encoder.m_nOutFrameNum,ctx->encoder.m_nFrameNum);
+      //   printf("out num %d in num %d\n",ctx->encoder.m_nOutFrameNum,ctx->encoder.m_nFrameNum);
+	// printf("temp %p %p\n",temp,temp+nSize);
          out_size = 0;
          if(nSize>0)
            frame->is_last_frame = 0;        
          xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, frame);
 
-         XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(temp+nSize, avctx->width * avctx->height);
+         XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(temp+nSize, avctx->width * avctx->height*1.5);
          do{
               xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
               nSize += out_size;
@@ -233,7 +255,7 @@ static int ngc265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         xma_frame_free(frame);
       if(nSize > 0)
       {
-        printf("nsize=%d\n",nSize);
+        //printf("nsize=%d\n",nSize);
         int rc = ff_alloc_packet(pkt, nSize);
         memcpy(pkt->data,temp,nSize);
         free(temp);
@@ -304,27 +326,30 @@ static int ngc265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     frame->do_not_encode = 0;
     frame->is_last_frame = 0;
     //printf("linesize %d %d w %d h %d\n",pic->linesize[0],pic->linesize[1],pic->width,pic->height);
-    int rc = xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, frame);
+    int rc_xma = xma_enc_session_send_frame(ctx->encoder.m_pEnc_session, frame);
     //usleep(100*1000);
     out_size = 0;
-    rc = ff_alloc_packet(pkt, fprops.width * fprops.height);
-    XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(pkt->data, fprops.width * fprops.height);
+    int rc = ff_alloc_packet(pkt, fprops.width * fprops.height*1.5);
+    XmaDataBuffer *out_buffer = xma_data_from_buffer_clone(pkt->data, fprops.width * fprops.height*1.5);
     int nCount=0;
 #if 1
-    if(ctx->encoder.m_nFrameNum < (ctx->rc_lookahead+40))
+    if(rc_xma == XMA_ERROR)
+	assert(0);
+    if(rc_xma == XMA_SEND_MORE_DATA )
     {
+	//printf("returned more data\n");
         /*ctx->nFrameNum++;
         ctx->encoder.m_nFrameNum++;
         *got_packet = 0;
           return 0;*/
-        rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
+        rc_xma = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
     }
     else {
     
 #endif
     do{
 	//usleep(5*1000);
-        rc = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
+        rc_xma = xma_enc_session_recv_data(ctx->encoder.m_pEnc_session, out_buffer, &out_size);
         //printf("out_size=%d\n",out_size);
 	nCount++;
     }while(out_size == 0);
