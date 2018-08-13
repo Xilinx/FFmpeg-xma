@@ -116,7 +116,7 @@ static int vyusynch264_decode(AVCodecContext *avctx, void *data, int *got_frame,
 		xma_data_buffer_free(buf);
 		ctx->latencyFrames++;
     }
-    if (ctx->latencyFrames > 30)
+    if ((ctx->latencyFrames > 30) && (!ctx->intraOnly))
     	usleep(ctx->latencyFrames * 100);
     rc = xma_dec_session_get_properties(ctx->dec_session, &fprops);
     if (rc == XMA_END_OF_FILE)
@@ -199,9 +199,9 @@ static const enum AVPixelFormat vyusynch264_csp_eight[] = {
     AV_PIX_FMT_YUV420P,
     AV_PIX_FMT_YUV422P,
     AV_PIX_FMT_YUV444P,
-	AV_PIX_FMT_YUV420P16LE,
-	AV_PIX_FMT_YUV422P16LE,
-	AV_PIX_FMT_YUV444P16LE,
+//	AV_PIX_FMT_YUV420P16LE,
+//	AV_PIX_FMT_YUV422P16LE,
+//	AV_PIX_FMT_YUV444P16LE,
     AV_PIX_FMT_NONE
 };
 
