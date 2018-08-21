@@ -121,8 +121,8 @@ int output_config_props(AVFilterLink *outlink)
         default:
             return -1;
     }
-    printf("out->w = %d\n", out->w);
-    printf("out->h = %d\n", out->h);	
+//    printf("out->w = %d\n", out->w);
+//    printf("out->h = %d\n", out->h);
 
     return 0;
 }
@@ -143,15 +143,15 @@ static int xma_config_props(AVFilterLink *outlink)
     props.input.height = inlink->h;
     props.input.stride = inlink->w; 
 
-    printf("nb_outputs=%d\n", s->nb_outputs);
-    printf("out_1_w=%d\n", s->out_1_width);
-    printf("out_1_h=%d\n", s->out_1_height);
-    printf("out_2_w=%d\n", s->out_2_width);
-    printf("out_2_h=%d\n", s->out_2_height);
-    printf("out_3_w=%d\n", s->out_3_width);
-    printf("out_3_h=%d\n", s->out_3_height);
-    printf("out_4_w=%d\n", s->out_4_width);
-    printf("out_4_h=%d\n", s->out_4_height);
+//    printf("nb_outputs=%d\n", s->nb_outputs);
+//    printf("out_1_w=%d\n", s->out_1_width);
+//    printf("out_1_h=%d\n", s->out_1_height);
+//    printf("out_2_w=%d\n", s->out_2_width);
+//    printf("out_2_h=%d\n", s->out_2_height);
+//    printf("out_3_w=%d\n", s->out_3_width);
+//    printf("out_3_h=%d\n", s->out_3_height);
+//    printf("out_4_w=%d\n", s->out_4_width);
+//    printf("out_4_h=%d\n", s->out_4_height);
 	
     props.output[0].format = XMA_YUV420_FMT_TYPE;
     props.output[0].bits_per_pixel = 8;
