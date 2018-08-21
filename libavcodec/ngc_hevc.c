@@ -87,7 +87,7 @@ static const AVOption options[] = {
 static av_cold int ngc265_encode_close(AVCodecContext *avctx)
 {
     ngc265Context *ctx = avctx->priv_data;
-    printf("ngc close\n");
+//    printf("ngc close\n");
     av_frame_free(&ctx->tmp_frame);
     xma_enc_session_destroy(ctx->encoder.m_pEnc_session);
     return 0;
@@ -216,10 +216,10 @@ static int ngc265_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     if(!pic)
     {
-      printf("got enc EOF\n");
+//      printf("got enc EOF\n");
       if(ctx->encoder.m_nOutFrameNum >= ctx->encoder.m_nFrameNum)
       {
-          printf("returning EOF\n");
+//          printf("returning EOF\n");
 	        *got_packet = 0;
           return AVERROR_EOF;
       }
