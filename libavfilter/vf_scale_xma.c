@@ -36,6 +36,7 @@
 #include "formats.h"
 #include "internal.h"
 #include "video.h"
+#define MAX_OUTS 8//4//8
 
 typedef struct AbrScalerContext {
     const AVClass    *class;
@@ -48,6 +49,16 @@ typedef struct AbrScalerContext {
     int               out_3_height;
     int               out_4_width;
     int               out_4_height;
+    int               out_5_width;
+    int               out_5_height;
+    int               out_6_width;
+    int               out_6_height;
+    int               out_7_width;
+    int               out_7_height;
+    int               out_8_width;
+    int               out_8_height;
+    int               frame_id;
+    int               frames;
     XmaScalerSession *session; 
 } AbrScalerContext;
 
@@ -96,6 +107,11 @@ int output_config_props(AVFilterLink *outlink)
     const int outlink_idx = FF_OUTLINK_IDX(outlink);
     AVFilterLink        *out    = outlink->src->outputs[outlink_idx];
 
+
+    //out->w = s->out_width[outlink_idx];
+    //out->h = s->out_height[outlink_idx];	   
+    //outlink->sample_aspect_ratio= (AVRational) {1, 1};
+
     switch (outlink_idx)
     {
         case 0:
@@ -117,12 +133,28 @@ int output_config_props(AVFilterLink *outlink)
            out->w = s->out_4_width;
            out->h = s->out_4_height;
            outlink->sample_aspect_ratio= (AVRational) {1, 1};
+        case 4:
+           out->w = s->out_5_width;
+           out->h = s->out_5_height;
+           outlink->sample_aspect_ratio= (AVRational) {1, 1};
+        case 5:
+           out->w = s->out_6_width;
+           out->h = s->out_6_height;
+           outlink->sample_aspect_ratio= (AVRational) {1, 1};
+        case 6:
+           out->w = s->out_7_width;
+           out->h = s->out_7_height;
+           outlink->sample_aspect_ratio= (AVRational) {1, 1};
+        case 7:
+           out->w = s->out_8_width;
+           out->h = s->out_8_height;
+           outlink->sample_aspect_ratio= (AVRational) {1, 1};		   
 	break;
         default:
             return -1;
     }
-//    printf("out->w = %d\n", out->w);
-//    printf("out->h = %d\n", out->h);
+
+    printf("outlink_id=%d : \n out->w = %d  out->h = %d\n", outlink_idx, out->w,out->h);
 
     return 0;
 }
@@ -143,50 +175,68 @@ static int xma_config_props(AVFilterLink *outlink)
     props.input.height = inlink->h;
     props.input.stride = inlink->w; 
 
-//    printf("nb_outputs=%d\n", s->nb_outputs);
-//    printf("out_1_w=%d\n", s->out_1_width);
-//    printf("out_1_h=%d\n", s->out_1_height);
-//    printf("out_2_w=%d\n", s->out_2_width);
-//    printf("out_2_h=%d\n", s->out_2_height);
-//    printf("out_3_w=%d\n", s->out_3_width);
-//    printf("out_3_h=%d\n", s->out_3_height);
-//    printf("out_4_w=%d\n", s->out_4_width);
-//    printf("out_4_h=%d\n", s->out_4_height);
-	
+    printf("nb_outputs=%d\n", s->nb_outputs);
+    printf("out_w_0=%d\n", s->out_1_width);
+    printf("out_h_0=%d\n", s->out_1_height);
+
     props.output[0].format = XMA_YUV420_FMT_TYPE;
     props.output[0].bits_per_pixel = 8;
     props.output[0].width = s->out_1_width;
     props.output[0].height = s->out_1_height;
     props.output[0].stride = s->out_1_width;
-    props.output[0].filter_idx = 0;
     props.output[0].coeffLoad = 0;
+	
 	
     props.output[1].format = XMA_YUV420_FMT_TYPE;
     props.output[1].bits_per_pixel = 8;
     props.output[1].width = s->out_2_width;
     props.output[1].height = s->out_2_height;
     props.output[1].stride = s->out_2_width;
-    props.output[1].filter_idx = 1;
-    props.output[1].coeffLoad = 0;	
-
+    props.output[1].coeffLoad = 0;
+    
     props.output[2].format = XMA_YUV420_FMT_TYPE;
     props.output[2].bits_per_pixel = 8;
     props.output[2].width = s->out_3_width;
     props.output[2].height = s->out_3_height;
     props.output[2].stride = s->out_3_width;
-    props.output[2].filter_idx = 2;
-    props.output[2].coeffLoad = 0;	
+    props.output[2].coeffLoad = 0;
 
     props.output[3].format = XMA_YUV420_FMT_TYPE;
     props.output[3].bits_per_pixel = 8;
     props.output[3].width = s->out_4_width;
     props.output[3].height = s->out_4_height;
     props.output[3].stride = s->out_4_width;
-    props.output[3].filter_idx = 3;
-    props.output[3].coeffLoad = 0;	
-	
-    //When coeffLoad is set to 2, app expects a FilterCoeff.txt to load coefficients from 
-    if ((props.output[0].coeffLoad==2) || (props.output[1].coeffLoad==2) || (props.output[2].coeffLoad==2) || (props.output[3].coeffLoad==2))
+    props.output[3].coeffLoad = 0;
+   
+    props.output[4].format = XMA_YUV420_FMT_TYPE;
+    props.output[4].bits_per_pixel = 8;
+    props.output[4].width = s->out_5_width;
+    props.output[4].height = s->out_5_height;
+    props.output[4].stride = s->out_5_width;
+    props.output[4].coeffLoad = 0;
+
+    props.output[5].format = XMA_YUV420_FMT_TYPE;
+    props.output[5].bits_per_pixel = 8;
+    props.output[5].width = s->out_6_width;
+    props.output[5].height = s->out_6_height;
+    props.output[5].stride = s->out_6_width;
+    props.output[5].coeffLoad = 0;
+
+    props.output[6].format = XMA_YUV420_FMT_TYPE;
+    props.output[6].bits_per_pixel = 8;
+    props.output[6].width = s->out_7_width;
+    props.output[6].height = s->out_7_height;
+    props.output[6].stride = s->out_7_width;
+    props.output[6].coeffLoad = 0;
+
+    props.output[7].format = XMA_YUV420_FMT_TYPE;
+    props.output[7].bits_per_pixel = 8;
+    props.output[7].width = s->out_8_width;
+    props.output[7].height = s->out_8_height;
+    props.output[7].stride = s->out_8_width;
+    props.output[7].coeffLoad = 0;	
+ //When coeffLoad is set to 2, app expects a FilterCoeff.txt to load coefficients from 
+    if ((props.output[0].coeffLoad==2) || (props.output[1].coeffLoad==2) || (props.output[2].coeffLoad==2) || (props.output[3].coeffLoad==2) || (props.output[4].coeffLoad==2) || (props.output[5].coeffLoad==2) || (props.output[6].coeffLoad==2) || (props.output[7].coeffLoad==2))
     {
         sprintf(props.input.coeffFile, "FilterCoeff.txt");
     }
@@ -205,18 +255,19 @@ static int xma_filter_frame(AVFilterLink *link, AVFrame *frame)
 {
     AVFilterContext     *ctx            = link->dst;
     AbrScalerContext    *s              = ctx->priv;
-    int8_t               frame_id       = s->session->first_frame;	
+    int8_t               frame_id       = 0;	
 	
     AVFrame             *in_frame       = frame;
     XmaFrame            *xframe         = NULL; 
     int                  ret            = AVERROR_EOF;
 	
-    AVFrame             *a_frame_list[4];
-    XmaFrame            *x_frame_list[4];
+    AVFrame             *a_frame_list[MAX_OUTS];
+    XmaFrame            *x_frame_list[MAX_OUTS];
     XmaFrameData         frame_data;
     XmaFrameProperties   frame_props;
     int                  i;
-
+    int                  frame_delay =2;
+    //printf("start ffmpeg filter frame\n");
     // Clone input frame from an AVFrame to an XmaFrame
     frame_props.format = XMA_YUV420_FMT_TYPE;
     frame_props.width = in_frame->width;
@@ -256,9 +307,9 @@ static int xma_filter_frame(AVFilterLink *link, AVFrame *frame)
         
         x_frame_list[i] = xma_frame_from_buffers_clone(&fprops, &fdata);
     } 
-        
-    xma_scaler_session_send_frame(s->session, xframe);
-    if(frame_id> 1){ // only read output frame after 3rd frame.
+       //printf("ffmpef send frame call\n"); 
+    frame_id = xma_scaler_session_send_frame(s->session, xframe);
+    if(frame_id == XMA_SUCCESS){ // only read output frame after 3rd frame.
        xma_scaler_session_recv_frame_list(s->session, x_frame_list);
 
        for (i = 0; i < ctx->nb_outputs; i++) 
@@ -318,6 +369,14 @@ static const AVOption options[] = {
     { "out_3_height", "set height of output 3", OFFSET(out_3_height), AV_OPT_TYPE_INT, { .i64 = 360 }, 240, INT_MAX, FLAGS },
     { "out_4_width", "set width of output 4", OFFSET(out_4_width), AV_OPT_TYPE_INT, { .i64 = 424 }, 424, INT_MAX, FLAGS },
     { "out_4_height", "set height of output 4", OFFSET(out_4_height), AV_OPT_TYPE_INT, { .i64 = 240 }, 240, INT_MAX, FLAGS },
+    { "out_5_width", "set width of output 5", OFFSET(out_5_width), AV_OPT_TYPE_INT, { .i64 = 424 }, 424, INT_MAX, FLAGS },
+    { "out_5_height", "set height of output 5", OFFSET(out_5_height), AV_OPT_TYPE_INT, { .i64 = 240 }, 240, INT_MAX, FLAGS },
+    { "out_6_width", "set width of output 6", OFFSET(out_6_width), AV_OPT_TYPE_INT, { .i64 = 424 }, 424, INT_MAX, FLAGS },
+    { "out_6_height", "set height of output 6", OFFSET(out_6_height), AV_OPT_TYPE_INT, { .i64 = 240 }, 240, INT_MAX, FLAGS },
+	{ "out_7_width", "set width of output 7", OFFSET(out_7_width), AV_OPT_TYPE_INT, { .i64 = 424 }, 424, INT_MAX, FLAGS },
+    { "out_7_height", "set height of output 7", OFFSET(out_7_height), AV_OPT_TYPE_INT, { .i64 = 240 }, 240, INT_MAX, FLAGS },
+    { "out_8_width", "set width of output 8", OFFSET(out_8_width), AV_OPT_TYPE_INT, { .i64 = 424 }, 424, INT_MAX, FLAGS },
+    { "out_8_height", "set height of output 8", OFFSET(out_8_height), AV_OPT_TYPE_INT, { .i64 = 240 }, 240, INT_MAX, FLAGS },	
     { NULL }
 };
 
