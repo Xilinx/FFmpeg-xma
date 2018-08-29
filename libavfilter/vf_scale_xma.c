@@ -36,7 +36,7 @@
 #include "formats.h"
 #include "internal.h"
 #include "video.h"
-#define MAX_OUTS 8//4//8
+#define MAX_OUTS 4//8
 
 typedef struct AbrScalerContext {
     const AVClass    *class;
