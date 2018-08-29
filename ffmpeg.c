@@ -4760,8 +4760,7 @@ int main(int argc, char **argv)
 
 #if CONFIG_LIBXMAAPI
     /* Initialize the Xilinx Media Accelerator */
-    //ret = xma_initialize("/tmp/ffmpeg_cfg.yaml");
-    ret = xma_initialize("sm_abrscaler_cfg.yaml");
+    ret = xma_initialize("/tmp/ffmpeg_cfg.yaml");
     if (ret != 0)
     {
         printf("xma_initialize failed: rc = %d\n", ret);
