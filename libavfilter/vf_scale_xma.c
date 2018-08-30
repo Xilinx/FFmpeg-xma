@@ -133,18 +133,22 @@ int output_config_props(AVFilterLink *outlink)
            out->w = s->out_4_width;
            out->h = s->out_4_height;
            outlink->sample_aspect_ratio= (AVRational) {1, 1};
+        break;
         case 4:
            out->w = s->out_5_width;
            out->h = s->out_5_height;
            outlink->sample_aspect_ratio= (AVRational) {1, 1};
+        break;
         case 5:
            out->w = s->out_6_width;
            out->h = s->out_6_height;
            outlink->sample_aspect_ratio= (AVRational) {1, 1};
+        break;
         case 6:
            out->w = s->out_7_width;
            out->h = s->out_7_height;
            outlink->sample_aspect_ratio= (AVRational) {1, 1};
+        break;
         case 7:
            out->w = s->out_8_width;
            out->h = s->out_8_height;
