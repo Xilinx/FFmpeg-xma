@@ -418,6 +418,10 @@ int ff_request_frame(AVFilterLink *link)
             /* Acknowledge status change. Filters using ff_request_frame() will
                handle the change automatically. Filters can also check the
                status directly but none do yet. */
+#if CONFIG_LIBXMAAPI
+            if (strcmp(link->dst->filter->name,"scale_xma") ==0)
+               xma_abrscaler_filter_flush(link);   //Flush ABRscaler filter pipeline			   
+#endif
             ff_avfilter_link_set_out_status(link, link->status_in, link->status_in_pts);
             return link->status_out;
         }

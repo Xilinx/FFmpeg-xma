@@ -1175,6 +1175,18 @@ char *avfilter_graph_dump(AVFilterGraph *graph, const char *options);
  */
 int avfilter_graph_request_oldest(AVFilterGraph *graph);
 
+
+
+/**
+ * Flush XMA abrscaler filter.
+ *
+ * @param AVFilter link to pass on to filter frame to flush device buffers.
+ *
+ */
+#if CONFIG_LIBXMAAPI
+void xma_abrscaler_filter_flush(AVFilterLink *link);
+#endif
+
 /**
  * @}
  */
