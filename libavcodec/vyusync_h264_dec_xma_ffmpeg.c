@@ -137,6 +137,7 @@ static av_cold int vyusynch264_decode_init (
     switch (avctx->pix_fmt)
     {
         case AV_PIX_FMT_YUV420P      :  ctx->fprops.format = XMA_YUV420_FMT_TYPE;  ctx->fprops.bits_per_pixel =  8;  break;
+        case AV_PIX_FMT_YUVJ420P     :  ctx->fprops.format = XMA_YUV420_FMT_TYPE;  ctx->fprops.bits_per_pixel =  8;  break;
         case AV_PIX_FMT_YUV422P      :  ctx->fprops.format = XMA_YUV422_FMT_TYPE;  ctx->fprops.bits_per_pixel =  8;  break;
         case AV_PIX_FMT_YUV444P      :  ctx->fprops.format = XMA_YUV444_FMT_TYPE;  ctx->fprops.bits_per_pixel =  8;  break;
         case AV_PIX_FMT_YUV420P16LE  :  ctx->fprops.format = XMA_YUV420_FMT_TYPE;  ctx->fprops.bits_per_pixel = 16;  break;
