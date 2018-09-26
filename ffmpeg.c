@@ -40,7 +40,7 @@
 #include <unistd.h>
 #endif
 
-#include <xmaapi.h>
+#include <xma.h>
 
 #include "libavformat/avformat.h"
 #include "libavdevice/avdevice.h"
@@ -4760,7 +4760,7 @@ int main(int argc, char **argv)
 
 #if CONFIG_LIBXMAAPI
     /* Initialize the Xilinx Media Accelerator */
-    ret = xma_initialize("/tmp/ffmpeg_cfg.yaml");
+    ret = xma_initialize("/var/tmp/xmacfg.yaml");
     if (ret != 0)
     {
         printf("xma_initialize failed: rc = %d\n", ret);
