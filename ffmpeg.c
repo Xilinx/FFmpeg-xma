@@ -4760,7 +4760,7 @@ int main(int argc, char **argv)
 
 #if CONFIG_LIBXMAAPI
     /* Initialize the Xilinx Media Accelerator */
-    ret = xma_initialize("/var/tmp/xmacfg.yaml");
+    ret = xma_initialize(NULL);
     if (ret != 0)
     {
         printf("xma_initialize failed: rc = %d\n", ret);
