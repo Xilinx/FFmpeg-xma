@@ -130,24 +130,19 @@ static int xlnx_copy_encode(AVCodecContext *avctx, AVPacket *pkt, const AVFrame 
     f_props.height = avctx->height;
     f_props.bits_per_pixel = 8;
 	
-    if (!pic)
+    // Allocate ouput data packet
+    out_packet_size = f_props.width * f_props.height * 1.5;   // Output is in YUV420p format
+    rc = ff_alloc_packet2(avctx, pkt, out_packet_size, out_packet_size);
+    if (rc < 0)
     {
-       if (ctx->out_frame >= ctx->in_frame)
-       {
-          *got_packet = 0;
-          return AVERROR_EOF;
-       }
-       else
-       {
-          f_props.width = 1920;
-          f_props.height = 1080;
-          f_data.data[0] = NULL;
-          f_data.data[1] = NULL;
-          f_data.data[2] = NULL;		
-       }
+       av_log(NULL, AV_LOG_ERROR, "ERROR: Failed to allocate ff_packet\n");
+       return rc;
     }
-    else
-    {
+
+    // Clone output data buffer
+    out_buffer = xma_data_from_buffer_clone(pkt->data, out_packet_size);
+
+    if (pic) {
        f_data.data[0] = pic->data[0];
        f_data.data[1] = pic->data[1];
        f_data.data[2] = pic->data[2];
@@ -160,22 +155,47 @@ static int xlnx_copy_encode(AVCodecContext *avctx, AVPacket *pkt, const AVFrame 
            pip_inIdx++;
        ctx->pts[pip_inIdx] = pic->pts;           
        ctx->dts[pip_inIdx] = pic->pkt_dts;           
-    }	
-  		
-    // Allocate ouput data packet
-    out_packet_size = f_props.width * f_props.height * 1.5;   // Output is in YUV420p format
-    rc = ff_alloc_packet2(avctx, pkt, out_packet_size, out_packet_size);
-    if (rc < 0)
-    {
-       av_log(NULL, AV_LOG_ERROR, "ERROR: Failed to allocate ff_packet\n");
-       return rc;
-    }
+       // Send input frame to copy encoder
+       rc = xma_enc_session_send_frame(ctx->m_pEnc_session, xframe);
+       if (rc == XMA_SEND_MORE_DATA) {
+          av_log(NULL, AV_LOG_INFO, "INFO: Encoder requires more input frames to start processing\n");
+          ctx->in_frame++;
+          *got_packet = 0;
+          return 0;
+       }
+       else if (rc != 0) {
+          av_log(NULL, AV_LOG_ERROR, "ERROR: Failed to send input frame to encoder\n");
+          return rc;
+       }
+       ctx->in_frame++;
 
-    // Clone output data buffer
-    out_buffer = xma_data_from_buffer_clone(pkt->data, out_packet_size);
-	
-    if (!pic) 	  
-    {	
+       // Receive data from copy encoder
+       rc = xma_enc_session_recv_data(ctx->m_pEnc_session, out_buffer, &out_size);
+       //av_log(NULL, AV_LOG_INFO, "INFO: Output Size = %d for frame %d \n", out_size, ctx->out_frame);
+       if(out_size > 0) {
+          if (ctx->out_frame % NUM_BUFFERS == 0)
+             pip_outIdx =0;
+          else
+             pip_outIdx++;
+
+          pkt->pts = ctx->pts[pip_outIdx];           
+          pkt->dts = ctx->dts[pip_outIdx];           
+
+          *got_packet = 1;
+          ctx->out_frame++;
+       }
+    } else {
+       if (ctx->out_frame >= ctx->in_frame) {
+          *got_packet = 0;
+          return AVERROR_EOF;
+       }
+       else {
+          f_props.width = 1920;
+          f_props.height = 1080;
+          f_data.data[0] = NULL;
+          f_data.data[1] = NULL;
+          f_data.data[2] = NULL;		
+       }
        //Receive last output frames from pipeline by sending NULL frames    
        xframe = xma_frame_alloc(&f_props);		
        xframe->data[0].buffer = NULL;
@@ -185,8 +205,7 @@ static int xlnx_copy_encode(AVCodecContext *avctx, AVPacket *pkt, const AVFrame 
        rc = xma_enc_session_send_frame(ctx->m_pEnc_session, xframe);
        rc = xma_enc_session_recv_data(ctx->m_pEnc_session, out_buffer, &out_size);
 
-       if(out_size > 0)
-       {
+       if(out_size > 0) {
           if (ctx->out_frame % NUM_BUFFERS == 0)
              pip_outIdx =0;
           else
@@ -206,43 +225,9 @@ static int xlnx_copy_encode(AVCodecContext *avctx, AVPacket *pkt, const AVFrame 
           xma_data_buffer_free(out_buffer);
 
        return 0;	
-    }		
-    else
-    {
-       // Send input frame to copy encoder
-       rc = xma_enc_session_send_frame(ctx->m_pEnc_session, xframe);
-       if (rc == XMA_SEND_MORE_DATA)
-       {
-          av_log(NULL, AV_LOG_INFO, "INFO: Encoder requires more input frames to start processing\n");
-          ctx->in_frame++;
-          *got_packet = 0;
-          return 0;
-       }
-       else if (rc != 0)
-       {
-          av_log(NULL, AV_LOG_ERROR, "ERROR: Failed to send input frame to encoder\n");
-          return rc;
-       }
-       ctx->in_frame++;
+    }	
+  		
 	
-       // Receive data from copy encoder
-       rc = xma_enc_session_recv_data(ctx->m_pEnc_session, out_buffer, &out_size);
-       //av_log(NULL, AV_LOG_INFO, "INFO: Output Size = %d for frame %d \n", out_size, ctx->out_frame);
-       if(out_size > 0)
-       {
-          if (ctx->out_frame % NUM_BUFFERS == 0)
-             pip_outIdx =0;
-          else
-             pip_outIdx++;
-
-          pkt->pts = ctx->pts[pip_outIdx];           
-          pkt->dts = ctx->dts[pip_outIdx];           
-
-          *got_packet = 1;
-          ctx->out_frame++;
-       }
-    }
-
     // Release resources
     if(xframe)
        xma_frame_free(xframe);
