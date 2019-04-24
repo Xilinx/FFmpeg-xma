@@ -48,7 +48,7 @@ typedef struct AbrScalerContext {
     int               nb_outputs;
     int               out_width[MAX_OUTS];
     int               out_height[MAX_OUTS];
-
+    unsigned int      fps;
     int              *copyOutLink;
     int               flush;
     int               send_status;	
@@ -115,6 +115,7 @@ static int xma_config_props(AVFilterLink *outlink)
     XmaScalerProperties  props;
     AbrScalerContext    *s      = ctx->priv;
     int n                       = 0;
+    s->fps = 25;
 
     props.hwscaler_type = XMA_POLYPHASE_SCALER_TYPE;
     strcpy(props.hwvendor_string, "Xilinx");
@@ -127,21 +128,35 @@ static int xma_config_props(AVFilterLink *outlink)
     props.input.stride = inlink->w; 
 
 
+    if (outlink->time_base.den > 0) {
+        int fpsNum = outlink->time_base.den;
+        int fpsDenom = outlink->time_base.num;
+        int fps = fpsNum/fpsDenom;
+        printf("fps set as %d/%d=%d\n",outlink->frame_rate.num,outlink->frame_rate.den,fps);
+        s->fps = fps;
+
+    }
+
+
+    props.input.framerate.numerator = s->fps;
+    props.input.framerate.denominator = 1;
+
+
     props.output[0].format = XMA_YUV420_FMT_TYPE;
     props.output[0].bits_per_pixel = 8;
     props.output[0].width  = s->out_width[0];
     props.output[0].height = s->out_height[0];
     props.output[0].stride = s->out_width[0];
     props.output[0].coeffLoad = 0;
-	
-	
+
+
     props.output[1].format = XMA_YUV420_FMT_TYPE;
     props.output[1].bits_per_pixel = 8;
     props.output[1].width  = s->out_width[1];
     props.output[1].height = s->out_height[1];
     props.output[1].stride = s->out_width[1];
     props.output[1].coeffLoad = 0;
-    
+
     props.output[2].format = XMA_YUV420_FMT_TYPE;
     props.output[2].bits_per_pixel = 8;
     props.output[2].width  = s->out_width[2];
