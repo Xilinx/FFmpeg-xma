@@ -174,6 +174,11 @@ static av_cold int vyusynch264_decode_init (
     dec_props.intraOnly         =    ctx->intra_only;
     dec_props.params            =    ctx->dec_params;
     dec_props.param_cnt         =    14;
+    dec_props.width             =    avctx->width;
+    dec_props.height            =    avctx->height;
+    dec_props.bits_per_pixel    =    8;
+    dec_props.framerate.numerator    =    avctx->framerate.num;
+    dec_props.framerate.denominator  =    avctx->framerate.den;
     
     ctx->dec_session            =    xma_dec_session_create(&dec_props);
     if (!ctx->dec_session) {
@@ -254,6 +259,13 @@ static av_cold int vyusynch264_decode_init (
             
             xma_data_buffer_free(buf);
             free (param_set_buffer);
+        }
+        else
+        {
+            // SPS and PPS coming from RTP
+            buf = xma_data_from_buffer_clone(avctx->extradata, avctx->extradata_size);
+            xma_dec_session_send_data(ctx->dec_session, buf, &data_used);
+            xma_data_buffer_free(buf);
         }
     }
     
